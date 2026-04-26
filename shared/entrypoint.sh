@@ -43,7 +43,7 @@ for tpl in "$TPL"/*.tmpl; do
   base=$(basename "$tpl" .tmpl)
   case "$base" in
     server.properties)     out="$SERVER/server.properties" ;;
-    fabricproxy-lite.json) out="$SERVER/config/FabricProxy-Lite.json" ;;
+    fabricproxy-lite.toml) out="$SERVER/config/FabricProxy-Lite.toml" ;;
     *)                     out="$SERVER/$base" ;;
   esac
   if [ ! -e "$out" ]; then
