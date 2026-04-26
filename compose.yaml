@@ -1,0 +1,93 @@
+name: mcnet
+
+x-common-env: &common-env
+  VELOCITY_FORWARDING_SECRET: ${VELOCITY_FORWARDING_SECRET}
+  RCON_PASSWORD: ${RCON_PASSWORD}
+
+services:
+  proxy:
+    image: ${IMAGE_PROXY:-ghcr.io/${GHCR_OWNER}/mc-proxy:${IMAGE_TAG:-latest}}
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    container_name: mcnet-proxy
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      XMS: 512M
+      XMX: 1G
+      MOTD_PROXY: ${MOTD_PROXY}
+    ports:
+      - "${PROXY_PORT:-25565}:25565"
+      # Geyser (Bedrock Edition) listens on UDP; default Bedrock port 19132.
+      - "${BEDROCK_PORT:-19132}:19132/udp"
+    volumes:
+      - proxy-data:/data
+    networks: [mcnet]
+    depends_on:
+      - survival
+      - creative
+
+  survival:
+    image: ${IMAGE_SURVIVAL:-ghcr.io/${GHCR_OWNER}/mc-survival:${IMAGE_TAG:-latest}}
+    build:
+      context: .
+      dockerfile: shared/Dockerfile.server
+      args:
+        BASE_IMAGE: ghcr.io/${GHCR_OWNER}/mc-base:latest
+        SERVER_NAME: survival
+    container_name: mcnet-survival
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      XMS: ${SURVIVAL_XMS:-2G}
+      XMX: ${SURVIVAL_XMX:-6G}
+      MOTD_SERVER: "§asurvival §7- 主生电世界"
+    volumes:
+      - survival-data:/data
+    networks: [mcnet]
+    stdin_open: true
+    tty: true
+
+  creative:
+    image: ${IMAGE_CREATIVE:-ghcr.io/${GHCR_OWNER}/mc-creative:${IMAGE_TAG:-latest}}
+    build:
+      context: .
+      dockerfile: shared/Dockerfile.server
+      args:
+        BASE_IMAGE: ghcr.io/${GHCR_OWNER}/mc-base:latest
+        SERVER_NAME: creative
+    container_name: mcnet-creative
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      XMS: ${CREATIVE_XMS:-1G}
+      XMX: ${CREATIVE_XMX:-3G}
+      MOTD_SERVER: "§dcreative §7- 超平坦试验场"
+    volumes:
+      - creative-data:/data
+    networks: [mcnet]
+    stdin_open: true
+    tty: true
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: mcnet-dozzle
+    restart: unless-stopped
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_FILTER: "name=mcnet-*"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [mcnet]
+
+networks:
+  mcnet:
+    driver: bridge
+
+volumes:
+  proxy-data:
+  survival-data:
+  creative-data:
