@@ -60,6 +60,8 @@ jobs:
           tags: |
             ghcr.io/${{ steps.owner.outputs.lc }}/mc-${{ matrix.role }}:latest
             ghcr.io/${{ steps.owner.outputs.lc }}/mc-${{ matrix.role }}:sha-${{ github.sha }}
-          build-args: ${{ matrix.role == 'proxy' && '' || format('BASE_IMAGE=ghcr.io/{0}/mc-base:latest SERVER_NAME={1}', steps.owner.outputs.lc, matrix.server_name) }}
+          build-args: |
+            ${{ matrix.role == 'proxy' && '' || format('BASE_IMAGE=ghcr.io/{0}/mc-base:latest', steps.owner.outputs.lc) }}
+            ${{ matrix.role == 'proxy' && '' || format('SERVER_NAME={0}', matrix.server_name) }}
           cache-from: type=gha,scope=${{ matrix.role }}
           cache-to: type=gha,mode=max,scope=${{ matrix.role }}
