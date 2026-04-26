@@ -1,0 +1,46 @@
+config-version = "2.7"
+
+bind = "0.0.0.0:25565"
+motd = "${MOTD_PROXY}"
+show-max-players = 100
+online-mode = true
+force-key-authentication = true
+prevent-client-proxy-connections = false
+# Modern forwarding: FabricProxy-Lite is baked into the base image and reads
+# the same VELOCITY_FORWARDING_SECRET on each subserver.
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "forwarding.secret"
+announce-forge = false
+announce-proxy-commands = true
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+sample-players-in-ping = false
+enable-player-address-logging = true
+
+[servers]
+survival = "survival:25565"
+creative = "creative:25565"
+try = ["survival", "creative"]
+
+[forced-hosts]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = false
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-forge = false
+backend-ping-passthrough = "DISABLED"
+proxy-protocol-mode = "NONE"
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false
