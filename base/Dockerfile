@@ -39,7 +39,24 @@ RUN set -eux; \
     curl -fL --retry 3 \
       -o /opt/server/fabric-server-launch.jar \
       "https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${INSTALLER}/server/jar"; \
-    printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /opt/server/.fabric-version
+    printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /opt/server/.fabric-version; \
+    # Prefetch fabric libraries (libraries/, .fabric/) into /opt/server so
+    # runtime never needs to download them. The bundled launcher unpacks deps
+    # on first run, then exits because eula.txt is missing.
+    # Mods are temporarily moved aside: with them in cwd, krypton/lithium spawn
+    # non-daemon threads in onInitializeServer that keep the JVM alive forever
+    # after Main.main returns from the EULA check.
+    mv /opt/server/mods /opt/server/mods.staged; \
+    cd /opt/server \
+      && java -jar fabric-server-launch.jar nogui </dev/null; \
+    mv /opt/server/mods.staged /opt/server/mods; \
+    test -d /opt/server/.fabric && test -d /opt/server/libraries; \
+    rm -f /opt/server/eula.txt /opt/server/server.properties; \
+    rm -rf /opt/server/logs; \
+    echo "fabric libraries prefetched into /opt/server/{libraries,.fabric}"
+
+# MCDR config template (rendered into /data/config.yml on first start)
+COPY base/mcdr/config.yml.tmpl /opt/server/mcdr-config.yml.tmpl
 
 # Surface the resolved versions as image labels for traceability.
 LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \

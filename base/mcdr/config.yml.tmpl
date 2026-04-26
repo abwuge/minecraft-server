@@ -1,0 +1,27 @@
+# MCDReforged config rendered by entrypoint on first start.
+# Edit /data/config.yml directly to tweak; this template is only used once.
+language: en_us
+working_directory: server
+start_command: >-
+  java -Xms${XMS} -Xmx${XMX}
+  -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
+  -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC
+  -XX:+AlwaysPreTouch -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40
+  -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20
+  -Dfabric.addMods=/opt/server/mods
+  -jar fabric-server-launch.jar nogui
+handler: vanilla_handler
+encoding: utf8
+decoding: utf8
+console_command_prefix: '!!'
+disable_console_thread: false
+disable_console_color: false
+advanced_console: true
+check_update: false
+plugin_directories:
+  - plugins
+rcon:
+  enable: false
+  address: 127.0.0.1
+  port: 25575
+  password: ''
