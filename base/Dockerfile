@@ -1,6 +1,6 @@
 # Base image for Minecraft subservers.
-# Self-resolving: at build time, scripts/resolve-mods.py picks the newest MC
-# version compatible with mods.toml, then fetches the matching Fabric loader,
+# Self-resolving: at build time, scripts/resolve-packages.py picks the newest MC
+# version compatible with packages.toml, then fetches the matching Fabric loader,
 # installer, server launcher, and all mod jars. No version pinning files needed.
 
 FROM azul/zulu-openjdk:25-jre-headless
@@ -11,10 +11,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Reuse apt downloads across builds (BuildKit cache mounts). Drop the
+# auto-clean hook that wipes the cache after each install.
+RUN rm -f /etc/apt/apt.conf.d/docker-clean
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         curl jq gettext-base ca-certificates tini \
-        python3 python3-pip python3-venv python3-tomli \
-    && rm -rf /var/lib/apt/lists/*
+        python3 python3-pip python3-venv python3-tomli
 
 # Install MCDReforged into /opt/mcdr venv (isolated from system python)
 RUN python3 -m venv /opt/mcdr \
@@ -23,13 +27,14 @@ RUN python3 -m venv /opt/mcdr \
 ENV PATH=/opt/mcdr/bin:$PATH
 
 # Resolve everything: MC version, Fabric loader+installer, mod set.
-# All driven by mods.toml; no manual version locking.
-COPY scripts/resolve-mods.py /opt/server/resolve-mods.py
-COPY mods.toml                /opt/server/mods.toml
+# All driven by packages.toml; no manual version locking.
+COPY scripts/resolve-packages.py /opt/server/resolve-packages.py
+COPY packages.toml                /opt/server/packages.toml
 RUN set -eux; \
     mkdir -p /opt/server/mods; \
-    /usr/bin/python3 /opt/server/resolve-mods.py \
-        --registry /opt/server/mods.toml \
+    /usr/bin/python3 /opt/server/resolve-packages.py \
+        --kind mods \
+        --registry /opt/server/packages.toml \
         --download /opt/server/mods \
         > /opt/server/mods.resolved.json; \
     MC=$(jq -r .mc_version                /opt/server/mods.resolved.json); \

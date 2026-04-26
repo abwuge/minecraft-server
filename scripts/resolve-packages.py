@@ -3,20 +3,26 @@
 # requires-python = ">=3.10"
 # dependencies = ["tomli"]
 # ///
-"""Resolve a compatible Minecraft version + mod jar set across all configured mods.
+"""Resolve packages from packages.toml.
 
-Pulls version metadata from Modrinth and GitHub Releases, intersects the
-supported MC versions across the *required* mods, picks the newest MC,
-and prints a JSON document compatible with `mods.lock.json` to stdout.
+Two kinds of artifacts are supported:
 
-Optional mods do not constrain the chosen MC version; if no jar exists for
-the resolved MC, the script falls back to the newest jar that supports an
-older patch in the same minor line.
+  --kind mods (default)
+    Fabric mods that run on the subservers. Pulls version metadata from
+    Modrinth / GitHub Releases, intersects the supported MC versions across
+    the *required* mods, picks the newest MC, and prints a JSON document to
+    stdout. Optional mods do not constrain the MC choice and fall back to
+    the newest patch <= target.
+
+  --kind plugins
+    Velocity proxy plugins. Each plugin is resolved independently to its
+    newest release; there is no MC version intersection.
 
 Usage:
-    python3 scripts/resolve-mods.py              # auto-pick newest MC
-    python3 scripts/resolve-mods.py --mc 26.1.1  # pin a specific MC
-    python3 scripts/resolve-mods.py --no-hash    # skip sha512 download for GH assets
+    python3 scripts/resolve-packages.py                    # mods, auto-pick MC
+    python3 scripts/resolve-packages.py --mc 26.1.1        # mods, pin MC
+    python3 scripts/resolve-packages.py --no-hash          # skip sha512
+    python3 scripts/resolve-packages.py --kind plugins     # velocity plugins
 """
 
 from __future__ import annotations
@@ -33,22 +39,22 @@ import urllib.request
 
 import tomli
 
-UA = "minecraft-server-resolve-mods/1.0"
-DEFAULT_REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mods.toml")
+UA = "minecraft-server-resolve-packages/1.0"
+DEFAULT_REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packages.toml")
 
-# Loaded from mods.toml at startup; see that file for the schema.
+# Loaded from packages.toml at startup; see that file for the schema.
 LOADER: str = "fabric"
 MODS: list[dict] = []
+PLUGINS: list[dict] = []
 
 
 def load_registry(path: str) -> None:
-    global LOADER, MODS
+    global LOADER, MODS, PLUGINS
     with open(path, "rb") as fh:
         data = tomli.load(fh)
     LOADER = data.get("loader", "fabric")
     MODS = list(data.get("mods", []))
-    if not MODS:
-        raise SystemExit(f"no mods configured in {path}")
+    PLUGINS = list(data.get("plugins", []))
 
 
 # ---------- helpers ----------
@@ -98,9 +104,10 @@ def stream_sha512(url: str) -> str:
 
 
 # ---------- per-source fetchers ----------
-def fetch_modrinth(project: str) -> dict:
+def fetch_modrinth(project: str, loader: str | None = None) -> dict:
     """Return mc_version -> record dict (filename, url, sha512, version, _date)."""
-    url = f'https://api.modrinth.com/v2/project/{project}/version?loaders=%5B%22{LOADER}%22%5D'
+    use_loader = loader if loader is not None else LOADER
+    url = f'https://api.modrinth.com/v2/project/{project}/version?loaders=%5B%22{use_loader}%22%5D'
     versions = http_get_json(url)
     out: dict = {}
     for v in versions:
@@ -186,6 +193,105 @@ def _fetch_one(mod: dict) -> tuple[str, dict]:
     if mod["source"] == "github_release":
         return name, fetch_github(mod)
     raise ValueError(mod["source"])
+
+
+def fetch_modrinth_latest(project: str, loader: str) -> dict:
+    """Return the newest version record (filename/url/sha512/version) for `project`
+    on `loader`, regardless of MC version.
+
+    Prefers `release` channel; falls back to `beta` if no release exists (some
+    upstream projects, e.g. Geyser, only tag betas on Modrinth even for
+    production builds).
+    """
+    url = f'https://api.modrinth.com/v2/project/{project}/version?loaders=%5B%22{loader}%22%5D'
+    versions = http_get_json(url)
+
+    def _pick(channel: str):
+        best = None
+        for v in versions:
+            if v.get("version_type") != channel:
+                continue
+            files = v.get("files") or []
+            primary = next((f for f in files if f.get("primary")), files[0] if files else None)
+            if not primary:
+                continue
+            if best is None or v["date_published"] > best["_date"]:
+                best = {
+                    "filename": primary["filename"],
+                    "url":      primary["url"],
+                    "sha512":   primary["hashes"]["sha512"],
+                    "version":  v["version_number"],
+                    "_date":    v["date_published"],
+                }
+        return best
+
+    best = _pick("release") or _pick("beta")
+    if best is None:
+        raise SystemExit(f"no version for modrinth project {project!r} on loader {loader!r}")
+    return best
+
+
+def fetch_geysermc(project: str, artifact: str = "velocity") -> dict:
+    """Fetch the latest build of a GeyserMC project (Geyser, Floodgate, ...)
+    from download.geysermc.org. The `artifact` selects the loader-specific
+    download (e.g. `velocity`, `paper`, `bungeecord`).
+    """
+    base = f"https://download.geysermc.org/v2/projects/{project}"
+    proj = http_get_json(base)
+    version = proj["versions"][-1]
+    build_info = http_get_json(f"{base}/versions/{version}/builds/latest")
+    build = build_info["build"]
+    downloads = build_info.get("downloads") or {}
+    if artifact not in downloads:
+        raise SystemExit(
+            f"geysermc project {project!r} has no {artifact!r} artifact "
+            f"(available: {sorted(downloads)})"
+        )
+    name = downloads[artifact]["name"]
+    sha256 = downloads[artifact].get("sha256")  # API returns sha256, not sha512
+    url = f"{base}/versions/{version}/builds/{build}/downloads/{artifact}"
+    return {
+        "filename": name,
+        "url":      url,
+        # sha512 will be filled at download time; the upstream-provided sha256
+        # is not stored, but the downloader still validates by recomputing.
+        "sha512":   None,
+        "version":  f"{version}-b{build}",
+        "_sha256":  sha256,
+    }
+
+
+def resolve_plugins() -> dict:
+    """Resolve every [[plugins]] entry to its latest Velocity release.
+    Returns a lock-shaped dict: {"loader": "velocity", "plugins": [...]}.
+    """
+    if not PLUGINS:
+        raise SystemExit("no [[plugins]] configured")
+    out: list[dict] = []
+    def _one(p: dict) -> dict:
+        log(f"[{p['name']}] fetching ({p['source']}, velocity)")
+        if p["source"] == "modrinth":
+            r = fetch_modrinth_latest(p["project"], loader="velocity")
+        elif p["source"] == "github_release":
+            vmap = fetch_github(p)
+            if not vmap:
+                raise SystemExit(f"no github asset for {p['name']}")
+            # Pick newest by published date across all matched MC keys.
+            r = max(vmap.values(), key=lambda x: x["_date"])
+        elif p["source"] == "geysermc":
+            r = fetch_geysermc(p["project"], artifact=p.get("artifact", "velocity"))
+        else:
+            raise ValueError(p["source"])
+        return {
+            "name":     p["name"],
+            "filename": r["filename"],
+            "url":      r["url"],
+            "sha512":   r["sha512"],
+            "version":  r["version"],
+        }
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        out = list(ex.map(_one, PLUGINS))
+    return {"loader": "velocity", "plugins": out}
 
 
 def collect(workers: int = 8) -> tuple[dict, set]:
@@ -302,19 +408,21 @@ def _download_one(entry: dict, out_dir: str) -> dict:
     return out
 
 
-def download_all(lock: dict, out_dir: str, workers: int = 6) -> dict:
+def download_all(lock: dict, out_dir: str, workers: int = 6, key: str = "mods") -> dict:
     os.makedirs(out_dir, exist_ok=True)
-    log(f"downloading {len(lock['mods'])} jars -> {out_dir}")
+    log(f"downloading {len(lock[key])} jars -> {out_dir}")
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        results = list(ex.map(lambda e: _download_one(e, out_dir), lock["mods"]))
+        results = list(ex.map(lambda e: _download_one(e, out_dir), lock[key]))
     lock = dict(lock)
-    lock["mods"] = results
+    lock[key] = results
     return lock
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mc", help="pin a specific MC version instead of auto-picking")
+    ap.add_argument("--kind", choices=("mods", "plugins"), default="mods",
+                    help="which package set to resolve (default: mods)")
+    ap.add_argument("--mc", help="(mods) pin a specific MC version instead of auto-picking")
     ap.add_argument("--no-hash", action="store_true",
                     help="skip streaming GitHub-sourced jars to compute sha512 "
                          "(ignored when --download is set)")
@@ -322,10 +430,21 @@ def main() -> None:
                     help="download all resolved jars into DIR (parallel); also fills sha512")
     ap.add_argument("--workers", type=int, default=8, help="parallel HTTP workers (default 8)")
     ap.add_argument("--registry", default=DEFAULT_REGISTRY,
-                    help="path to mods.toml registry (default: ../mods.toml)")
+                    help="path to packages.toml registry (default: ../packages.toml)")
     args = ap.parse_args()
 
     load_registry(args.registry)
+
+    if args.kind == "plugins":
+        lock = resolve_plugins()
+        if args.download:
+            lock = download_all(lock, args.download, workers=args.workers, key="plugins")
+        json.dump(lock, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+        return
+
+    if not MODS:
+        raise SystemExit("no [[mods]] configured")
     per_mod, optional = collect(workers=args.workers)
     expand_fuzzy(per_mod)
     target_mc = pick_mc(per_mod, optional, args.mc)
@@ -339,7 +458,7 @@ def main() -> None:
     lock["fabric_loader_version"]    = loader_v
     lock["fabric_installer_version"] = installer_v
     if args.download:
-        lock = download_all(lock, args.download, workers=args.workers)
+        lock = download_all(lock, args.download, workers=args.workers, key="mods")
     json.dump(lock, sys.stdout, indent=2, ensure_ascii=False)
     print()
 

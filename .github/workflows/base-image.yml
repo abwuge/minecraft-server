@@ -1,14 +1,14 @@
 name: Build base image
 
 # The base image self-resolves MC + Fabric + mod versions at build time
-# from mods.toml, so this workflow has no version inputs.
+# from packages.toml, so this workflow has no version inputs.
 on:
   push:
     branches: [main]
     paths:
       - 'base/**'
-      - 'mods.toml'
-      - 'scripts/resolve-mods.py'
+      - 'packages.toml'
+      - 'scripts/resolve-packages.py'
       - '.github/workflows/base-image.yml'
   workflow_dispatch:
   schedule:
