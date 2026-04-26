@@ -21,17 +21,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3 python3-pip python3-venv python3-tomli
 
 # Install MCDReforged into /opt/mcdr venv (isolated from system python)
-RUN python3 -m venv /opt/mcdr \
- && /opt/mcdr/bin/pip install --no-cache-dir --upgrade pip \
- && /opt/mcdr/bin/pip install --no-cache-dir "mcdreforged==${MCDR_VERSION}"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m venv /opt/mcdr \
+ && /opt/mcdr/bin/pip install --upgrade pip \
+ && /opt/mcdr/bin/pip install "mcdreforged==${MCDR_VERSION}"
 ENV PATH=/opt/mcdr/bin:$PATH
 
 # Resolve everything: MC version, Fabric loader+installer, mod set.
 # All driven by packages.toml; no manual version locking.
 COPY scripts/resolve-packages.py /opt/server/resolve-packages.py
 COPY packages.toml                /opt/server/packages.toml
-RUN set -eux; \
-    mkdir -p /opt/server/mods; \
+RUN --mount=type=cache,target=/opt/server/download-cache \
+    set -eux; \
+    mkdir -p /opt/server/mods /opt/server/download-cache; \
     /usr/bin/python3 /opt/server/resolve-packages.py \
         --kind mods \
         --registry /opt/server/packages.toml \
@@ -42,8 +44,10 @@ RUN set -eux; \
     INSTALLER=$(jq -r .fabric_installer_version /opt/server/mods.resolved.json); \
     echo "MC=${MC} loader=${LOADER} installer=${INSTALLER}"; \
     curl -fL --retry 3 \
-      -o /opt/server/fabric-server-launch.jar \
+      --create-dirs \
+      --output /opt/server/download-cache/fabric-server-launch.jar \
       "https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${INSTALLER}/server/jar"; \
+    cp /opt/server/download-cache/fabric-server-launch.jar /opt/server/fabric-server-launch.jar; \
     printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /opt/server/.fabric-version; \
     # Prefetch fabric libraries (libraries/, .fabric/) into /opt/server so
     # runtime never needs to download them. The bundled launcher unpacks deps
