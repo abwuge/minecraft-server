@@ -1,0 +1,19 @@
+# Subserver image (survival/creative differ only by SERVER_NAME).
+# FROM the self-built base image which already carries Azul Zulu JDK 25 + MCDR + Fabric launcher + mods.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG SERVER_NAME
+WORKDIR /data
+
+# 共享脚本
+COPY shared/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Per-subserver config templates (mods are inherited from the base image)
+COPY servers/${SERVER_NAME}/templates /opt/server/templates
+
+ENV SERVER_NAME=${SERVER_NAME}
+
+EXPOSE 25565
+CMD ["/usr/local/bin/entrypoint.sh"]
