@@ -1,0 +1,51 @@
+# Base image for Minecraft subservers.
+# Self-resolving: at build time, scripts/resolve-mods.py picks the newest MC
+# version compatible with mods.toml, then fetches the matching Fabric loader,
+# installer, server launcher, and all mod jars. No version pinning files needed.
+
+FROM azul/zulu-openjdk:25-jre-headless
+
+ARG MCDR_VERSION=2.14.7
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl jq gettext-base ca-certificates tini \
+        python3 python3-pip python3-venv python3-tomli \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install MCDReforged into /opt/mcdr venv (isolated from system python)
+RUN python3 -m venv /opt/mcdr \
+ && /opt/mcdr/bin/pip install --no-cache-dir --upgrade pip \
+ && /opt/mcdr/bin/pip install --no-cache-dir "mcdreforged==${MCDR_VERSION}"
+ENV PATH=/opt/mcdr/bin:$PATH
+
+# Resolve everything: MC version, Fabric loader+installer, mod set.
+# All driven by mods.toml; no manual version locking.
+COPY scripts/resolve-mods.py /opt/server/resolve-mods.py
+COPY mods.toml                /opt/server/mods.toml
+RUN set -eux; \
+    mkdir -p /opt/server/mods; \
+    /usr/bin/python3 /opt/server/resolve-mods.py \
+        --registry /opt/server/mods.toml \
+        --download /opt/server/mods \
+        > /opt/server/mods.resolved.json; \
+    MC=$(jq -r .mc_version                /opt/server/mods.resolved.json); \
+    LOADER=$(jq -r .fabric_loader_version /opt/server/mods.resolved.json); \
+    INSTALLER=$(jq -r .fabric_installer_version /opt/server/mods.resolved.json); \
+    echo "MC=${MC} loader=${LOADER} installer=${INSTALLER}"; \
+    curl -fL --retry 3 \
+      -o /opt/server/fabric-server-launch.jar \
+      "https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${INSTALLER}/server/jar"; \
+    printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /opt/server/.fabric-version
+
+# Surface the resolved versions as image labels for traceability.
+LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \
+      org.opencontainers.image.description="Minecraft Fabric + MCDR base image" \
+      mcdr.version="${MCDR_VERSION}"
+
+WORKDIR /data
+EXPOSE 25565 25575
+ENTRYPOINT ["/usr/bin/tini", "--"]

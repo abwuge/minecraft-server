@@ -1,0 +1,86 @@
+# Mod registry consumed by scripts/resolve-mods.py.
+# Edit this file to add / remove / reclassify mods. The resolver picks the
+# newest MC version that all required (non-optional) mods support.
+#
+# Per-mod fields:
+#   name      human label, also used in resolved output
+#   source    "modrinth" | "github_release"
+#   project   (modrinth) project slug or id
+#   repo      (github_release) "owner/name"
+#   asset_re  (github_release) regex over the jar filename; must define a named group `mc`
+#   fuzzy     (github_release) treat a tag X.Y as compatible with every X.Y.* seen elsewhere
+#   optional  true => won't constrain the chosen MC; falls back to newest patch <= target
+
+loader = "fabric"
+
+
+# ---------- core / required ----------
+
+[[mods]]
+name    = "fabric-api"
+source  = "modrinth"
+project = "fabric-api"
+
+[[mods]]
+name     = "fabric-carpet"
+source   = "github_release"
+repo     = "gnembon/fabric-carpet"
+# literal string: no need to double-escape backslashes
+asset_re = '^fabric-carpet-(?P<mc>\d+(?:\.\d+){1,2})\+v\d+\.jar$'
+fuzzy    = true
+
+[[mods]]
+name    = "carpet-tis-addition"
+source  = "modrinth"
+project = "carpet-tis-addition"
+
+[[mods]]
+name    = "gugle-carpet-addition"
+source  = "modrinth"
+project = "gca"
+
+[[mods]]
+name    = "lithium"
+source  = "modrinth"
+project = "lithium"
+
+[[mods]]
+name    = "krypton"
+source  = "modrinth"
+project = "krypton"
+
+[[mods]]
+name    = "fabricproxy-lite"
+source  = "modrinth"
+project = "fabricproxy-lite"
+
+[[mods]]
+name    = "luckperms"
+source  = "modrinth"
+project = "luckperms"
+
+[[mods]]
+name    = "vanilla-permissions"
+source  = "modrinth"
+project = "vanilla-permissions"
+
+
+# ---------- optional (won't block MC selection) ----------
+
+[[mods]]
+name     = "servux"
+source   = "modrinth"
+project  = "servux"
+optional = true
+
+[[mods]]
+name     = "syncmatica"
+source   = "modrinth"
+project  = "syncmatica"
+optional = true
+
+[[mods]]
+name     = "skinrestorer"
+source   = "modrinth"
+project  = "skinrestorer"
+optional = true
