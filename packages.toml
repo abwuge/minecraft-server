@@ -52,6 +52,11 @@ source  = "modrinth"
 project = "gca"
 
 [[mods]]
+name    = "carpet-extra"
+source  = "modrinth"
+project = "carpet-extra"
+
+[[mods]]
 name    = "lithium"
 source  = "modrinth"
 project = "lithium"
@@ -80,6 +85,30 @@ project = "vanilla-permissions"
 # ---------- optional (won't block MC selection) ----------
 
 [[mods]]
+name     = "appleskin"
+source   = "modrinth"
+project  = "appleskin"
+optional = true
+
+[[mods]]
+name     = "jade"
+source   = "modrinth"
+project  = "jade"
+optional = true
+
+[[mods]]
+name     = "magiclib"
+source   = "modrinth"
+project  = "magiclib"
+optional = true
+
+[[mods]]
+name     = "malilib"
+source   = "modrinth"
+project  = "malilib"
+optional = true
+
+[[mods]]
 name     = "servux"
 source   = "modrinth"
 project  = "servux"
@@ -96,6 +125,23 @@ name     = "skinrestorer"
 source   = "modrinth"
 project  = "skinrestorer"
 optional = true
+
+
+# ============================================================
+# MCDR plugins (installed into /data/plugins via entrypoint)
+# ============================================================
+
+[[mcdr_plugins]]
+name   = "prime-backup"
+source = "github_release"
+repo   = "TISUnion/PrimeBackup"
+asset_re = '^PrimeBackup-v[\d.]+\.pyz$'
+
+[[mcdr_plugins]]
+name   = "mirror-mcsmcdr"
+source = "github_release"
+repo   = "LazyAlienServer/MirrorMcsmcdR"
+asset_re = '^MirrorMcsmcdR-v[\d.]+\.mcdr$'
 
 
 # ============================================================
