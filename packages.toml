@@ -52,12 +52,6 @@ source  = "modrinth"
 project = "gca"
 
 [[mods]]
-name     = "carpet-extra"
-source   = "modrinth"
-project  = "carpet-extra"
-optional = true
-
-[[mods]]
 name    = "lithium"
 source  = "modrinth"
 project = "lithium"
@@ -84,30 +78,6 @@ project = "vanilla-permissions"
 
 
 # ---------- optional (won't block MC selection) ----------
-
-[[mods]]
-name     = "appleskin"
-source   = "modrinth"
-project  = "appleskin"
-optional = true
-
-[[mods]]
-name     = "jade"
-source   = "modrinth"
-project  = "jade"
-optional = true
-
-[[mods]]
-name     = "magiclib"
-source   = "modrinth"
-project  = "magiclib"
-optional = true
-
-[[mods]]
-name     = "malilib"
-source   = "modrinth"
-project  = "malilib"
-optional = true
 
 [[mods]]
 name     = "servux"
