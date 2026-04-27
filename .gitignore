@@ -3,7 +3,7 @@
 *.swp
 .DS_Store
 
-# 运行时产物 (映射到 named volume, 不入库)
+# 运行时产物 (bind mount 到 data/, 不入库)
 data/
 volumes/
 

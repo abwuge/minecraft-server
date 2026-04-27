@@ -18,11 +18,10 @@ services:
       XMX: 1G
       MOTD_PROXY: ${MOTD_PROXY}
     ports:
-      - "${PROXY_PORT:-25565}:25565"
-      # Geyser (Bedrock Edition) listens on UDP; default Bedrock port 19132.
+      - "${PROXY_PORT:-25565}:25565/tcp"
       - "${BEDROCK_PORT:-19132}:19132/udp"
     volumes:
-      - proxy-data:/data
+      - ./data/proxy:/data
     networks: [mcnet]
     depends_on:
       survival:
@@ -46,12 +45,11 @@ services:
       XMX: ${SURVIVAL_XMX:-6G}
       MOTD_SERVER: "§asurvival §7- 主生电世界"
     volumes:
-      - survival-data:/data
+      - ./data/survival:/data
     networks: [mcnet]
     stdin_open: true
     tty: true
     healthcheck:
-      # MC server is ready when 25565 accepts TCP connections.
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/25565' 2>/dev/null"]
       interval: 5s
       timeout: 3s
@@ -74,7 +72,7 @@ services:
       XMX: ${CREATIVE_XMX:-3G}
       MOTD_SERVER: "§dcreative §7- 超平坦试验场"
     volumes:
-      - creative-data:/data
+      - ./data/creative:/data
     networks: [mcnet]
     stdin_open: true
     tty: true
@@ -102,7 +100,3 @@ networks:
   mcnet:
     driver: bridge
 
-volumes:
-  proxy-data:
-  survival-data:
-  creative-data:
