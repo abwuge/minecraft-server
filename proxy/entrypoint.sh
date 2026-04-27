@@ -17,8 +17,10 @@ for jar in /opt/proxy/plugins/*.jar; do
 done
 shopt -u nullglob
 
-# 渲染 velocity.toml
-envsubst < "$TPL_DIR/velocity.toml.tmpl" > "$DATA_DIR/velocity.toml"
+# 渲染 velocity.toml (仅首次; 文件存在则保留用户修改)
+if [ ! -f "$DATA_DIR/velocity.toml" ]; then
+  envsubst < "$TPL_DIR/velocity.toml.tmpl" > "$DATA_DIR/velocity.toml"
+fi
 
 # 写 forwarding.secret 文件 (Velocity 默认从此文件读)
 echo -n "${VELOCITY_FORWARDING_SECRET}" > "$DATA_DIR/forwarding.secret"
