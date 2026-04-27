@@ -137,6 +137,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [mcnet]
 
+  gateway:
+    image: caddy:2-alpine
+    container_name: mcnet-gateway
+    restart: unless-stopped
+    profiles: [gateway]
+    ports:
+      - "${GATEWAY_PORT:-1080}:80"
+    volumes:
+      - ./config/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/gateway/data:/data
+      - ./data/gateway/config:/config
+    networks: [mcnet]
+    depends_on:
+      - mcsm-web
+
 networks:
   mcnet:
     driver: bridge

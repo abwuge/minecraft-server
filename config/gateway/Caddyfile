@@ -1,0 +1,9 @@
+:{$GATEWAY_PORT:80}
+
+handle /daemon/* {
+	reverse_proxy mcsm-daemon:24444
+}
+
+handle {
+	reverse_proxy mcsm-web:23333
+}
