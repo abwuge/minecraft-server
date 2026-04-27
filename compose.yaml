@@ -24,28 +24,30 @@ services:
       - ./data/proxy:/data
     networks: [mcnet]
     depends_on:
-      survival:
+      main:
         condition: service_healthy
-      creative:
+      mirror:
+        condition: service_healthy
+      create:
         condition: service_healthy
 
-  survival:
-    image: ${IMAGE_SURVIVAL:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-survival:${IMAGE_TAG:-latest}}
+  main:
+    image: ${IMAGE_MAIN:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-main:${IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: shared/Dockerfile.server
       args:
         BASE_IMAGE: ghcr.io/${GHCR_OWNER:-abwuge}/mc-base:latest
-        SERVER_NAME: survival
-    container_name: mcnet-survival
+        SERVER_NAME: main
+    container_name: mcnet-main
     restart: unless-stopped
     environment:
       <<: *common-env
-      XMS: ${SURVIVAL_XMS:-2G}
-      XMX: ${SURVIVAL_XMX:-6G}
-      MOTD_SERVER: "§asurvival §7- 主生电世界"
+      XMS: ${MAIN_XMS:-2G}
+      XMX: ${MAIN_XMX:-6G}
+      MOTD_SERVER: "§amain §7- 主生电世界"
     volumes:
-      - ./data/survival:/data
+      - ./data/main:/data
     networks: [mcnet]
     stdin_open: true
     tty: true
@@ -56,23 +58,50 @@ services:
       start_period: 60s
       retries: 30
 
-  creative:
-    image: ${IMAGE_CREATIVE:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-creative:${IMAGE_TAG:-latest}}
+  mirror:
+    image: ${IMAGE_MIRROR:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-mirror:${IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: shared/Dockerfile.server
       args:
         BASE_IMAGE: ghcr.io/${GHCR_OWNER:-abwuge}/mc-base:latest
-        SERVER_NAME: creative
-    container_name: mcnet-creative
+        SERVER_NAME: mirror
+    container_name: mcnet-mirror
     restart: unless-stopped
     environment:
       <<: *common-env
-      XMS: ${CREATIVE_XMS:-1G}
-      XMX: ${CREATIVE_XMX:-3G}
-      MOTD_SERVER: "§dcreative §7- 超平坦试验场"
+      XMS: ${MIRROR_XMS:-1G}
+      XMX: ${MIRROR_XMX:-3G}
+      MOTD_SERVER: "§emirror §7- 镜像服"
     volumes:
-      - ./data/creative:/data
+      - ./data/mirror:/data
+    networks: [mcnet]
+    stdin_open: true
+    tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/25565' 2>/dev/null"]
+      interval: 5s
+      timeout: 3s
+      start_period: 60s
+      retries: 30
+
+  create:
+    image: ${IMAGE_CREATE:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-create:${IMAGE_TAG:-latest}}
+    build:
+      context: .
+      dockerfile: shared/Dockerfile.server
+      args:
+        BASE_IMAGE: ghcr.io/${GHCR_OWNER:-abwuge}/mc-base:latest
+        SERVER_NAME: create
+    container_name: mcnet-create
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      XMS: ${CREATE_XMS:-1G}
+      XMX: ${CREATE_XMX:-3G}
+      MOTD_SERVER: "§dcreate §7- 超平坦试验场"
+    volumes:
+      - ./data/create:/data
     networks: [mcnet]
     stdin_open: true
     tty: true
@@ -111,4 +140,3 @@ services:
 networks:
   mcnet:
     driver: bridge
-

@@ -63,10 +63,12 @@ case "$CMD" in
   ps                查看容器状态
   logs              跟随所有日志
   logs-proxy        跟随 proxy 日志
-  logs-survival     跟随 survival 日志
-  logs-creative     跟随 creative 日志
-  console-survival  进入 survival RCON 控制台
-  console-creative  进入 creative RCON 控制台
+  logs-main         跟随 main 日志
+  logs-mirror       跟随 mirror 日志
+  logs-create       跟随 create 日志
+  console-main      进入 main RCON 控制台
+  console-mirror    进入 mirror RCON 控制台
+  console-create    进入 create RCON 控制台
   update            下载最新配置与镜像并滚动重启
   clean-data        危险: 删除所有 data/ 目录 (世界将丢失!)
 EOF
@@ -85,12 +87,14 @@ EOF
   ps)      $COMPOSE ps ;;
   logs)    $COMPOSE logs -f --tail=200 ;;
 
-  logs-proxy)    $COMPOSE logs -f --tail=200 proxy ;;
-  logs-survival) $COMPOSE logs -f --tail=200 survival ;;
-  logs-creative) $COMPOSE logs -f --tail=200 creative ;;
+  logs-proxy)  $COMPOSE logs -f --tail=200 proxy ;;
+  logs-main)   $COMPOSE logs -f --tail=200 main ;;
+  logs-mirror) $COMPOSE logs -f --tail=200 mirror ;;
+  logs-create) $COMPOSE logs -f --tail=200 create ;;
 
-  console-survival) _console survival ;;
-  console-creative) _console creative ;;
+  console-main)   _console main ;;
+  console-mirror) _console mirror ;;
+  console-create) _console create ;;
 
   update)
     echo "[update] 下载最新配置..."
