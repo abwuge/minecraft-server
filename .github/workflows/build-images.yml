@@ -6,8 +6,7 @@ on:
     paths:
       - 'proxy/**'
       - 'shared/**'
-      - 'servers/**'
-      - 'scripts/resolve-packages.py'
+      - 'config/**'
       - '.github/workflows/build-images.yml'
   workflow_dispatch:
   workflow_run:
@@ -17,10 +16,49 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: read
 
 jobs:
+  wait-for-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for in-progress base image builds
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const maxWait = 600;
+            const interval = 15;
+            let elapsed = 0;
+            while (elapsed < maxWait) {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner, repo,
+                workflow_id: 'base-image.yml',
+                status: 'in_progress',
+              });
+              if (runs.total_count === 0) {
+                const { data: queued } = await github.rest.actions.listWorkflowRuns({
+                  owner, repo,
+                  workflow_id: 'base-image.yml',
+                  status: 'queued',
+                });
+                if (queued.total_count === 0) break;
+              }
+              core.info(`Base image build in progress, waiting... (${elapsed}s)`);
+              await new Promise(r => setTimeout(r, interval * 1000));
+              elapsed += interval;
+            }
+            if (elapsed >= maxWait) {
+              core.setFailed('Timed out waiting for base image build');
+            }
+            // If triggered by workflow_run, check that it succeeded
+            if (context.eventName === 'workflow_run' && context.payload.workflow_run?.conclusion !== 'success') {
+              core.setFailed(`Base image build ${context.payload.workflow_run?.conclusion}, skipping`);
+            }
+
   build:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    needs: wait-for-base
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
