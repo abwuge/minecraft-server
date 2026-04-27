@@ -46,15 +46,17 @@ DEFAULT_REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 LOADER: str = "fabric"
 MODS: list[dict] = []
 PLUGINS: list[dict] = []
+MCDR_PLUGINS: list[dict] = []
 
 
 def load_registry(path: str) -> None:
-    global LOADER, MODS, PLUGINS
+    global LOADER, MODS, PLUGINS, MCDR_PLUGINS
     with open(path, "rb") as fh:
         data = tomli.load(fh)
     LOADER = data.get("loader", "fabric")
     MODS = list(data.get("mods", []))
     PLUGINS = list(data.get("plugins", []))
+    MCDR_PLUGINS = list(data.get("mcdr_plugins", []))
 
 
 # ---------- helpers ----------
@@ -294,6 +296,48 @@ def resolve_plugins() -> dict:
     return {"loader": "velocity", "plugins": out}
 
 
+def resolve_mcdr_plugins() -> dict:
+    """Resolve every [[mcdr_plugins]] entry to its latest release.
+    Returns a lock-shaped dict: {"mcdr_plugins": [...]}.
+    """
+    if not MCDR_PLUGINS:
+        raise SystemExit("no [[mcdr_plugins]] configured")
+    def _one(p: dict) -> dict:
+        log(f"[{p['name']}] fetching ({p['source']}, mcdr)")
+        if p["source"] == "github_release":
+            repo = p["repo"]
+            pat = re.compile(p["asset_re"])
+            url = f"https://api.github.com/repos/{repo}/releases?per_page=10"
+            releases = http_get_json(url)
+            for r in releases:
+                if r.get("prerelease") or r.get("draft"):
+                    continue
+                for a in r.get("assets", []):
+                    if pat.match(a["name"]):
+                        return {
+                            "name":     p["name"],
+                            "filename": a["name"],
+                            "url":      a["browser_download_url"],
+                            "sha512":   None,
+                            "version":  r["tag_name"],
+                        }
+            raise SystemExit(f"no matching asset for mcdr plugin {p['name']}")
+        elif p["source"] == "modrinth":
+            r = fetch_modrinth_latest(p["project"], loader="mcdreforged")
+            return {
+                "name":     p["name"],
+                "filename": r["filename"],
+                "url":      r["url"],
+                "sha512":   r["sha512"],
+                "version":  r["version"],
+            }
+        else:
+            raise ValueError(p["source"])
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        out = list(ex.map(_one, MCDR_PLUGINS))
+    return {"mcdr_plugins": out}
+
+
 def collect(workers: int = 8) -> tuple[dict, set]:
     per_mod: dict = {}
     optional: set = {m["name"] for m in MODS if m.get("optional")}
@@ -420,7 +464,7 @@ def download_all(lock: dict, out_dir: str, workers: int = 6, key: str = "mods") 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kind", choices=("mods", "plugins"), default="mods",
+    ap.add_argument("--kind", choices=("mods", "plugins", "mcdr_plugins"), default="mods",
                     help="which package set to resolve (default: mods)")
     ap.add_argument("--mc", help="(mods) pin a specific MC version instead of auto-picking")
     ap.add_argument("--no-hash", action="store_true",
@@ -439,6 +483,14 @@ def main() -> None:
         lock = resolve_plugins()
         if args.download:
             lock = download_all(lock, args.download, workers=args.workers, key="plugins")
+        json.dump(lock, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+        return
+
+    if args.kind == "mcdr_plugins":
+        lock = resolve_mcdr_plugins()
+        if args.download:
+            lock = download_all(lock, args.download, workers=args.workers, key="mcdr_plugins")
         json.dump(lock, sys.stdout, indent=2, ensure_ascii=False)
         print()
         return

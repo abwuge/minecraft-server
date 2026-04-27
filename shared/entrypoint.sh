@@ -25,6 +25,15 @@ log() { echo "[entrypoint] $*"; }
 
 mkdir -p "$DATA/plugins" "$DATA/logs" "$SERVER/config" "$SERVER/mods"
 
+# ---------- 0. Baked MCDR plugins ----------
+shopt -s nullglob
+for plug in /opt/server/mcdr-plugins/*; do
+  base=$(basename "$plug")
+  link="$DATA/plugins/$base"
+  [ -e "$link" ] || ln -s "$plug" "$link"
+done
+shopt -u nullglob
+
 # ---------- 1. EULA ----------
 echo "eula=true" > "$SERVER/eula.txt"
 

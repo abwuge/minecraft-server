@@ -67,6 +67,16 @@ RUN --mount=type=cache,target=/opt/server/download-cache \
 # MCDR config template (rendered into /data/config.yml on first start)
 COPY base/mcdr/config.yml.tmpl /opt/server/mcdr-config.yml.tmpl
 
+# Resolve and download MCDR plugins (PrimeBackup, MirrorMcsmcdR, ...).
+RUN --mount=type=cache,target=/opt/server/download-cache \
+    set -eux; \
+    mkdir -p /opt/server/mcdr-plugins; \
+    /usr/bin/python3 /opt/server/resolve-packages.py \
+        --kind mcdr_plugins \
+        --registry /opt/server/packages.toml \
+        --download /opt/server/mcdr-plugins \
+        > /opt/server/mcdr-plugins.resolved.json
+
 # Surface the resolved versions as image labels for traceability.
 LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \
       org.opencontainers.image.description="Minecraft Fabric + MCDR base image" \
