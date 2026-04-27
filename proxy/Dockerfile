@@ -58,7 +58,7 @@ RUN set -eux; \
         --download /opt/proxy/plugins \
         > /opt/proxy/plugins.resolved.json
 
-COPY proxy/templates /opt/proxy/templates
+COPY config/proxy /opt/proxy/templates
 COPY proxy/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

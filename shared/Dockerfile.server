@@ -11,7 +11,7 @@ COPY shared/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Per-subserver config templates (mods are inherited from the base image)
-COPY servers/${SERVER_NAME}/templates /opt/server/templates
+COPY config/${SERVER_NAME} /opt/server/templates
 
 ENV SERVER_NAME=${SERVER_NAME}
 
