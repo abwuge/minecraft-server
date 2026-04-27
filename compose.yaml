@@ -6,7 +6,7 @@ x-common-env: &common-env
 
 services:
   proxy:
-    image: ${IMAGE_PROXY:-ghcr.io/${GHCR_OWNER}/mc-proxy:${IMAGE_TAG:-latest}}
+    image: ${IMAGE_PROXY:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-proxy:${IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: proxy/Dockerfile
@@ -30,12 +30,12 @@ services:
         condition: service_healthy
 
   survival:
-    image: ${IMAGE_SURVIVAL:-ghcr.io/${GHCR_OWNER}/mc-survival:${IMAGE_TAG:-latest}}
+    image: ${IMAGE_SURVIVAL:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-survival:${IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: shared/Dockerfile.server
       args:
-        BASE_IMAGE: ghcr.io/${GHCR_OWNER}/mc-base:latest
+        BASE_IMAGE: ghcr.io/${GHCR_OWNER:-abwuge}/mc-base:latest
         SERVER_NAME: survival
     container_name: mcnet-survival
     restart: unless-stopped
@@ -57,12 +57,12 @@ services:
       retries: 30
 
   creative:
-    image: ${IMAGE_CREATIVE:-ghcr.io/${GHCR_OWNER}/mc-creative:${IMAGE_TAG:-latest}}
+    image: ${IMAGE_CREATIVE:-ghcr.io/${GHCR_OWNER:-abwuge}/mc-creative:${IMAGE_TAG:-latest}}
     build:
       context: .
       dockerfile: shared/Dockerfile.server
       args:
-        BASE_IMAGE: ghcr.io/${GHCR_OWNER}/mc-base:latest
+        BASE_IMAGE: ghcr.io/${GHCR_OWNER:-abwuge}/mc-base:latest
         SERVER_NAME: creative
     container_name: mcnet-creative
     restart: unless-stopped
