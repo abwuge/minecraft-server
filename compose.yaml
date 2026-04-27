@@ -83,17 +83,29 @@ services:
       start_period: 60s
       retries: 30
 
-  dozzle:
-    image: amir20/dozzle:latest
-    container_name: mcnet-dozzle
+  mcsm-web:
+    image: githubyumao/mcsmanager-web:latest
+    container_name: mcnet-mcsm-web
     restart: unless-stopped
-    environment:
-      DOZZLE_NO_ANALYTICS: "true"
-      DOZZLE_FILTER: "name=mcnet-*"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${MCSM_WEB_PORT:-23333}:23333"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/mcsm/web/data:/opt/mcsmanager/web/data
+      - ./data/mcsm/web/logs:/opt/mcsmanager/web/logs
+    networks: [mcnet]
+    depends_on:
+      - mcsm-daemon
+
+  mcsm-daemon:
+    image: githubyumao/mcsmanager-daemon:latest
+    container_name: mcnet-mcsm-daemon
+    restart: unless-stopped
+    ports:
+      - "${MCSM_DAEMON_PORT:-24444}:24444"
+    volumes:
+      - ./data/mcsm/daemon/data:/opt/mcsmanager/daemon/data
+      - ./data/mcsm/daemon/logs:/opt/mcsmanager/daemon/logs
+      - /var/run/docker.sock:/var/run/docker.sock
     networks: [mcnet]
 
 networks:

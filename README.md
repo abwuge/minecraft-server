@@ -51,6 +51,8 @@ make logs        # 等待几行 "Done (...)!"
 
 连接 `<你的IP>:25565`（Java）或 `<你的IP>:19132`（Bedrock），会落到 `survival`。在游戏里 `/server creative` 切换到 creative。
 
+打开 `http://<你的IP>:23333` 进入 MCSManager 面板，首次访问会引导创建管理员账号。在面板中添加已有的 Docker 实例（`mcnet-survival`、`mcnet-creative`、`mcnet-proxy`）即可在线输入指令、查看日志、管理文件。
+
 ## 目录结构
 
 ```
