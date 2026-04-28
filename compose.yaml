@@ -113,7 +113,7 @@ services:
       retries: 30
 
   mcsm-web:
-    image: githubyumao/mcsmanager-web:latest
+    image: ghcr.io/mcsmanager/mcsmanager-web:latest
     container_name: mcnet-mcsm-web
     restart: unless-stopped
     ports:
@@ -126,7 +126,7 @@ services:
       - mcsm-daemon
 
   mcsm-daemon:
-    image: githubyumao/mcsmanager-daemon:latest
+    image: ghcr.io/mcsmanager/mcsmanager-daemon:latest
     container_name: mcnet-mcsm-daemon
     restart: unless-stopped
     ports:
