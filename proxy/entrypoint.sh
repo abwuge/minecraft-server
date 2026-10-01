@@ -10,6 +10,11 @@ cd "$DATA_DIR"
 # User-supplied jars dropped directly into /data/plugins/ are kept as-is.
 mkdir -p "$DATA_DIR/plugins"
 shopt -s nullglob
+for link in "$DATA_DIR/plugins"/*.jar; do
+  if [ -L "$link" ] && [[ $(readlink "$link") == /opt/proxy/plugins/* ]]; then
+    rm "$link"
+  fi
+done
 for jar in /opt/proxy/plugins/*.jar; do
   base=$(basename "$jar")
   link="$DATA_DIR/plugins/$base"

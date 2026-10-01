@@ -77,6 +77,10 @@ RUN --mount=type=cache,target=/opt/server/download-cache \
         --download /opt/server/mcdr-plugins \
         > /opt/server/mcdr-plugins.resolved.json
 
+COPY base/install-mcdr-plugins.py /opt/server/install-mcdr-plugins.py
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/mcdr/bin/python /opt/server/install-mcdr-plugins.py /opt/server/mcdr-plugins
+
 # Surface the resolved versions as image labels for traceability.
 LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \
       org.opencontainers.image.description="Minecraft Fabric + MCDR base image" \

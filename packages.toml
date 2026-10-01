@@ -112,6 +112,7 @@ asset_re = '^PrimeBackup-v[\d.]+\.pyz$'
 name   = "mirror-mcsmcdr"
 source = "github_release"
 repo   = "LazyAlienServer/MirrorMcsmcdR"
+tag    = "v1.4.1" # v1.7.0 fails on import with an invalid Dict | {} annotation.
 asset_re = '^MirrorMcsmcdR-v[\d.]+\.mcdr$'
 
 

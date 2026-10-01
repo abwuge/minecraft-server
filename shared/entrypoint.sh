@@ -27,6 +27,11 @@ mkdir -p "$DATA/plugins" "$DATA/logs" "$SERVER/config" "$SERVER/mods"
 
 # ---------- 0. Baked MCDR plugins ----------
 shopt -s nullglob
+for link in "$DATA/plugins"/*; do
+  if [ -L "$link" ] && [[ $(readlink "$link") == /opt/server/mcdr-plugins/* ]]; then
+    rm "$link"
+  fi
+done
 for plug in /opt/server/mcdr-plugins/*; do
   base=$(basename "$plug")
   link="$DATA/plugins/$base"

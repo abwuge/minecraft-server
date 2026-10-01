@@ -35,6 +35,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import tomli
@@ -307,8 +308,11 @@ def resolve_mcdr_plugins() -> dict:
         if p["source"] == "github_release":
             repo = p["repo"]
             pat = re.compile(p["asset_re"])
-            url = f"https://api.github.com/repos/{repo}/releases?per_page=10"
-            releases = http_get_json(url)
+            if p.get("tag"):
+                tag = urllib.parse.quote(p["tag"], safe="")
+                releases = [http_get_json(f"https://api.github.com/repos/{repo}/releases/tags/{tag}")]
+            else:
+                releases = http_get_json(f"https://api.github.com/repos/{repo}/releases?per_page=10")
             for r in releases:
                 if r.get("prerelease") or r.get("draft"):
                     continue
