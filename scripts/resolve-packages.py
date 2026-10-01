@@ -114,7 +114,7 @@ def fetch_modrinth(project: str, loader: str | None = None) -> dict:
     versions = http_get_json(url)
     out: dict = {}
     for v in versions:
-        if v.get("version_type") != "release":
+        if v.get("version_type") not in ("release", "beta"):
             continue
         files = v.get("files") or []
         primary = next((f for f in files if f.get("primary")), files[0] if files else None)
