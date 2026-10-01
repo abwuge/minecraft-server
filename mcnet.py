@@ -150,6 +150,7 @@ class Manager:
     def __init__(self, docker=None):
         self.docker = docker or Docker()
         self.env = read_env()
+        self.env['TZ'] = self.env.get('TZ') or 'Asia/Shanghai'
         helper = self.docker.inspect(os.environ['HOSTNAME'])
         self.source = next(m['Source'] for m in helper['Mounts'] if m['Destination'] == '/mcnet-host')
         self.env.update(MCNET_DATA_PATH=self.source + '/data', MCNET_NETWORK=self.env.get('MCNET_NETWORK') or 'mcnet')
@@ -189,6 +190,7 @@ class Manager:
                       (self.source + '/.env', '/mcnet-env'), ('/var/run/docker.sock', '/var/run/docker.sock')]
         else:
             environment = {k: v for k, v in self.env.items() if k.startswith('MCSM_')}
+            environment['TZ'] = self.env.get('TZ') or 'Asia/Shanghai'
             mounts = [(data + '/mcsm/web/data', '/opt/mcsmanager/web/data'),
                       (data + '/mcsm/web/logs', '/opt/mcsmanager/web/logs'),
                       (data + '/mcsm/web/upload_files', '/opt/mcsmanager/web/public/upload_files'),
@@ -198,18 +200,24 @@ class Manager:
                     'RestartPolicy': {'Name': 'unless-stopped'}, 'NetworkMode': self.env['MCNET_NETWORK'],
                     'ExtraHosts': ['host.docker.internal:host-gateway'],
                     'Mounts': [{'Type': 'bind', 'Source': source, 'Target': target,
-                                'ReadOnly': target == '/mcnet-env'} for source, target in mounts]}}
+                                'ReadOnly': target == '/mcnet-env'} for source, target in mounts] + self.timezone_mounts()}}
+
+    def timezone_mounts(self):
+        timezone = self.env.get('TZ') or 'Asia/Shanghai'
+        return [{'Type': 'bind', 'Source': self.env['MCNET_DATA_PATH'] + '/timezone',
+                 'Target': target, 'ReadOnly': True}
+                for target in ('/etc/localtime', '/usr/share/zoneinfo/' + timezone)]
 
     def gateway_spec(self):
         hostname = urlparse(self.env.get('MCSM_PUBLIC_URL') or '').hostname or 'localhost'
-        return {'Image': 'caddy:2-alpine', 'Env': ['MCSM_HOST=' + hostname],
+        return {'Image': 'caddy:2-alpine', 'Env': ['MCSM_HOST=' + hostname, 'TZ=' + (self.env.get('TZ') or 'Asia/Shanghai')],
                 'ExposedPorts': {'80/tcp': {}, '443/tcp': {}, '443/udp': {}}, 'HostConfig': {
                     'RestartPolicy': {'Name': 'unless-stopped'}, 'NetworkMode': self.env['MCNET_NETWORK'],
                     'PortBindings': {p: [{'HostPort': p.split('/')[0]}] for p in ('80/tcp', '443/tcp', '443/udp')},
                     'Mounts': [{'Type': 'bind', 'Source': self.source + '/config/gateway/Caddyfile',
                                 'Target': '/etc/caddy/Caddyfile', 'ReadOnly': True},
                                {'Type': 'bind', 'Source': self.source + '/data/gateway/data', 'Target': '/data'},
-                               {'Type': 'bind', 'Source': self.source + '/data/gateway/config', 'Target': '/config'}]}}
+                               {'Type': 'bind', 'Source': self.source + '/data/gateway/config', 'Target': '/config'}] + self.timezone_mounts()}}
 
     def ensure_panel(self, service):
         spec = self.gateway_spec() if service == 'gateway' else self.panel_spec(service)
@@ -248,6 +256,7 @@ class Manager:
                 (ROOT / 'data' / (role if role in GAMES else role.replace('mcsm-', 'mcsm/')) / sub).mkdir(parents=True, exist_ok=True)
         (ROOT / 'data/whitelist').mkdir(parents=True, exist_ok=True)
         for sub in ('data', 'config'): (ROOT / 'data/gateway' / sub).mkdir(parents=True, exist_ok=True)
+        (ROOT / 'data/timezone').write_bytes((Path('/usr/share/zoneinfo') / self.env['TZ']).read_bytes())
         self.ensure_network()
         for service in (*PANELS, *GAMES):
             selected = service in PANELS or service in services

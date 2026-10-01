@@ -129,6 +129,7 @@ mcnet/
 |---|---|
 | `GHCR_OWNER` | 镜像所属账号，默认 `abwuge` |
 | `IMAGE_TAG` | 游戏镜像标签，默认 `latest` |
+| `TZ` | 全部容器的时区，默认 `Asia/Shanghai`（UTC+8）；修改后执行 `mcnet up` |
 | `IMAGE_PROXY` / `IMAGE_MAIN` / `IMAGE_MIRROR` / `IMAGE_CREATE` | 覆盖某个服务的完整镜像地址 |
 | `VELOCITY_FORWARDING_SECRET` | 代理与子服共用的转发密钥 |
 | `RCON_PASSWORD` | 子服 RCON 密码 |

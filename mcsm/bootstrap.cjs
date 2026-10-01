@@ -39,6 +39,7 @@ function gameConfig(service, env = deploymentEnv()) {
   const heap = { main: ['2G', '6G'], mirror: ['1G', '3G'], create: ['1G', '3G'], proxy: ['512M', '1G'] }[service];
   const key = service.toUpperCase();
   environment.push(`XMS=${env[key + '_XMS'] || heap[0]}`, `XMX=${env[key + '_XMX'] || heap[1]}`);
+  environment.push('TZ=' + (env.TZ || 'Asia/Shanghai'));
   if (proxy) environment.push('MOTD_PROXY=' + (env.MOTD_PROXY || '<green>生电群组服</green>'));
   else environment.push('SERVER_NAME=' + service, 'MOTD_SERVER=' + service);
   return {
@@ -50,7 +51,8 @@ function gameConfig(service, env = deploymentEnv()) {
     docker: { image, containerName: name, env: environment,
       networkMode: env.MCNET_NETWORK || 'mcnet', networkAliases: [service, name],
       ports: proxy ? [`${env.PROXY_PORT || 25565}:25565/tcp`, `${env.BEDROCK_PORT || 19132}:19132/udp`] : [],
-      extraVolumes: [`${data}/${service}|/data`, `${data}/whitelist|/whitelist`],
+      extraVolumes: [`${data}/${service}|/data`, `${data}/whitelist|/whitelist`,
+        `${data}/timezone|/etc/localtime`, `${data}/timezone|/usr/share/zoneinfo/${env.TZ || 'Asia/Shanghai'}`],
       workingDir: '', changeWorkdir: false, memory: 0, maxSpace: 0 }
   };
 }
