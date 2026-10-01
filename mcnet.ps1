@@ -49,6 +49,10 @@ function Manager {
     $image = if ($values['IMAGE_PROXY']) { $values['IMAGE_PROXY'] } else { "ghcr.io/$owner/mc-proxy:$tag" }
     & docker network inspect mcnet 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { & docker network create mcnet | Out-Null }
+    if ($args[0] -eq 'update') {
+        & docker pull $image
+        if ($LASTEXITCODE -ne 0) { throw '管理镜像拉取失败' }
+    }
     & docker run --rm --network mcnet --env-file .env -v "${PWD}:/mcnet-host" -v "${PWD}/data/whitelist:/whitelist" -v /var/run/docker.sock:/var/run/docker.sock --entrypoint python3 $image /mcnet-host/mcnet.py @args
     if ($LASTEXITCODE -ne 0) { throw "mcnet 执行失败 ($LASTEXITCODE)" }
 }

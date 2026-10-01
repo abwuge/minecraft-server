@@ -50,6 +50,7 @@ PYIMAGE
 _manager() {
   _init
   docker network inspect mcnet >/dev/null 2>&1 || docker network create mcnet >/dev/null
+  if [ "$1" = update ]; then docker pull "$(_image)"; fi
   docker run --rm --network mcnet --env-file .env \
     -v "$PWD:/mcnet-host" -v "$PWD/data/whitelist:/whitelist" \
     -v /var/run/docker.sock:/var/run/docker.sock \
