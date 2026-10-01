@@ -8,12 +8,13 @@ for tool in docker curl python3; do
 done
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
+refresh_key=$(date +%s)
 for file in .env.example mcnet.sh mcnet.py; do
-  curl -fsSL "$BASE_URL/$file" -o "$file.tmp"
+  curl -fsSL "$BASE_URL/$file?v=$refresh_key" -o "$file.tmp"
   mv "$file.tmp" "$file"
 done
 mkdir -p config/gateway
-curl -fsSL "$BASE_URL/config/gateway/Caddyfile" -o config/gateway/Caddyfile
+curl -fsSL "$BASE_URL/config/gateway/Caddyfile?v=$refresh_key" -o config/gateway/Caddyfile
 chmod +x mcnet.sh
 ./mcnet.sh update
 printf '[install] 已就绪: %s\n' "$PWD"

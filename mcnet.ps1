@@ -57,12 +57,13 @@ function Manager {
     if ($LASTEXITCODE -ne 0) { throw "mcnet 执行失败 ($LASTEXITCODE)" }
 }
 function Refresh {
+    $refreshKey = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     foreach($f in @('.env.example','mcnet.py','mcnet.ps1')) {
-        Invoke-WebRequest "$BaseUrl/$f" -OutFile "$f.tmp"
+        Invoke-WebRequest "${BaseUrl}/${f}?v=$refreshKey" -OutFile "$f.tmp"
         Move-Item -Force "$f.tmp" $f
     }
     New-Item -ItemType Directory -Force 'config/gateway' | Out-Null
-    Invoke-WebRequest "$BaseUrl/config/gateway/Caddyfile" -OutFile 'config/gateway/Caddyfile'
+    Invoke-WebRequest "$BaseUrl/config/gateway/Caddyfile?v=$refreshKey" -OutFile 'config/gateway/Caddyfile'
 }
 switch ($Command) {
     'help' {

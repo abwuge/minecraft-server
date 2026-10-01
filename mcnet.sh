@@ -57,12 +57,14 @@ _manager() {
     --entrypoint python3 "$(_image)" /mcnet-host/mcnet.py "$@"
 }
 _refresh() {
+  local refresh_key
+  refresh_key=$(date +%s)
   for f in .env.example mcnet.py mcnet.sh; do
-    curl -fsSL "$BASE_URL/$f" -o "$f.tmp"
+    curl -fsSL "$BASE_URL/$f?v=$refresh_key" -o "$f.tmp"
     mv "$f.tmp" "$f"
   done
   mkdir -p config/gateway
-  curl -fsSL "$BASE_URL/config/gateway/Caddyfile" -o config/gateway/Caddyfile
+  curl -fsSL "$BASE_URL/config/gateway/Caddyfile?v=$refresh_key" -o config/gateway/Caddyfile
   chmod +x mcnet.sh
 }
 case "$CMD" in

@@ -6,11 +6,12 @@ $BaseUrl = 'https://raw.githubusercontent.com/abwuge/minecraft-server/main'
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw '请先安装 Docker Desktop' }
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 Set-Location $InstallDir
+$refreshKey = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 foreach ($file in @('.env.example','mcnet.ps1','mcnet.py')) {
-    Invoke-WebRequest "$BaseUrl/$file" -OutFile "$file.tmp"
+    Invoke-WebRequest "${BaseUrl}/${file}?v=$refreshKey" -OutFile "$file.tmp"
     Move-Item -Force "$file.tmp" $file
 }
 New-Item -ItemType Directory -Force 'config/gateway' | Out-Null
-Invoke-WebRequest "$BaseUrl/config/gateway/Caddyfile" -OutFile 'config/gateway/Caddyfile'
+Invoke-WebRequest "$BaseUrl/config/gateway/Caddyfile?v=$refreshKey" -OutFile 'config/gateway/Caddyfile'
 .\mcnet.ps1 update
 Write-Host "[install] 已就绪: $PWD"
