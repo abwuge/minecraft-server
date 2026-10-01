@@ -1,124 +1,303 @@
-# Minecraft 生电群组服 (Velocity + Fabric)
+# Minecraft 生电群组服
 
-Velocity 代理 + 两个 Fabric/Carpet 子服(`survival` 主生电世界 + `creative` 超平坦试验场)，docker compose 编排，配置即代码。
+用 Docker Compose 部署 Velocity 代理和三个 Fabric／Carpet 子服，同时支持 Java 版与基岩版接入。Minecraft、Mod 和插件在构建镜像时解析、下载；世界和运行配置保存在部署目录的 `data/` 下。
 
-## 当前进度
-
-- [x] 仓库骨架与 docker compose
-- [x] Velocity 代理容器 (3.5.0-SNAPSHOT, MC 26 支持)
-- [x] survival / creative 子服容器，基于自建 base 镜像
-- [x] **自建 base 镜像** (`ghcr.io/<owner>/mc-base`)，含 Azul Zulu JDK 25 + MCDR + Fabric launcher
-- [x] **GitHub Actions CI**：base / proxy / survival / creative 自动多架构构建并推送 GHCR
-- [x] **packages.toml** 自动解析（Modrinth + GitHub Release + GeyserMC）
-- [x] FabricProxy-Lite + Carpet + LuckPerms
-- [x] Velocity modern forwarding
-- [x] ChatHub 跨服聊天桥
-- [x] Geyser + Floodgate (Bedrock 支持)
-- [ ] restic 备份
-
-## 镜像架构
-
-```
-ghcr.io/<owner>/mc-base:<sha>            # Azul Zulu JDK 25 + MCDR + Fabric launcher (核心层)
-   ├── ghcr.io/<owner>/mc-survival:<sha> # FROM mc-base + survival 模板
-   └── ghcr.io/<owner>/mc-creative:<sha> # FROM mc-base + creative 模板
-ghcr.io/<owner>/mc-proxy:<sha>           # 独立, FROM azul/zulu-openjdk:25-jre-headless + Velocity
-```
-
-版本由 `packages.toml` 自动解析（Modrinth + GitHub Release + GeyserMC），构建时确定并打 `:sha-<sha>` 标签。改版本 = 改 packages.toml + PR。
-
-## CI 工作流
-
-| Workflow | 触发 | 作用 |
+| 服务 | 容器 | 用途 |
 |---|---|---|
-| `base-image.yml` | `base/**` 或 `packages.toml` 变更 / 每周一 / 手动 | 构建 base 镜像，多架构推 GHCR |
-| `build-images.yml` | `proxy/`/`shared/`/`servers/`/`packages.toml` 变更 / base build 完成后 / 手动 | 矩阵构建 proxy/survival/creative |
+| `proxy` | `mcnet-proxy` | Velocity、Geyser、Floodgate、ViaVersion 和跨服聊天 |
+| `main` | `mcnet-main` | 主生电世界，生存模式 |
+| `mirror` | `mcnet-mirror` | 镜像服，镜像任务通过 MirrorMcsmcdR 配置 |
+| `create` | `mcnet-create` | 创造模式的超平坦试验场 |
+| `mcsm-web` / `mcsm-daemon` | `mcnet-mcsm-web` / `mcnet-mcsm-daemon` | MCSManager 管理面板和守护进程 |
+| `gateway` | `mcnet-gateway` | 可选 Caddy 网关，使用 `gateway` profile 启用 |
 
-GHCR 镜像默认 public（与仓库可见性一致）。如果你的 repo 是 private，首次推送后到 https://github.com/users/&lt;owner&gt;/packages/container/&lt;name&gt;/settings 把可见性改 public，否则服务器需要 `docker login ghcr.io`。
+玩家从代理进入 `main`，在游戏中用 `/server mirror`、`/server create` 切换子服，用 `/server main` 返回。代理通过 Velocity modern forwarding 与 FabricProxy-Lite 传递玩家信息；三个子服的游戏端口和 RCON 端口只在 Docker 网络内使用。
 
-## 快速开始
+## 部署
+
+镜像支持 `linux/amd64` 和 `linux/arm64`，包含 Java 25 运行时。主机需要 Docker 和 Compose V2；Windows 使用 Docker Desktop 的 Linux 容器模式。安装方法见 [Docker 官方文档](https://docs.docker.com/engine/install/)。
+
+默认 JVM 最大堆内存合计为 13 GiB：主服 6 GiB、镜像服 3 GiB、创造服 3 GiB、代理 1 GiB。请为 JVM 额外内存、系统和管理面板预留空间，并按机器容量调整。
+
+### Linux、macOS 或 WSL2
+
+安装脚本还需要 Bash、curl 和 Python 3。
 
 ```bash
-cp .env.example .env
-# 用以下命令生成随机密钥并填进 .env
-openssl rand -hex 24   # -> VELOCITY_FORWARDING_SECRET
-openssl rand -hex 16   # -> RCON_PASSWORD
-
-make build
-make up
-make logs        # 等待几行 "Done (...)!"
+curl -fsSL https://raw.githubusercontent.com/abwuge/minecraft-server/main/install.sh | bash -s -- ./mcnet
+cd mcnet
+# 根据需要编辑自动生成的 .env
+./mcnet.sh up
+./mcnet.sh ps
+./mcnet.sh logs-main
 ```
 
-连接 `<你的IP>:25565`（Java）或 `<你的IP>:19132`（Bedrock），会落到 `survival`。在游戏里 `/server creative` 切换到 creative。
+安装脚本下载 Compose 文件和管理脚本，生成带随机密钥的 `.env`，然后拉取镜像。启动后，三个子服通过健康检查，代理才会启动；日志中出现 `Done (...)!` 表示 Minecraft 已完成启动。跟随日志时按 `Ctrl+C` 退出查看。
 
-打开 `http://<你的IP>:23333` 进入 MCSManager 面板，首次访问会引导创建管理员账号。在面板中添加已有的 Docker 实例（`mcnet-survival`、`mcnet-creative`、`mcnet-proxy`）即可在线输入指令、查看日志、管理文件。
+只启动游戏服务时使用：
 
-## 目录结构
-
+```bash
+docker compose up -d main mirror create proxy
 ```
-minecraft-server/
+
+### Windows PowerShell
+
+```powershell
+New-Item -ItemType Directory -Force mcnet | Out-Null
+Set-Location mcnet
+Invoke-WebRequest https://raw.githubusercontent.com/abwuge/minecraft-server/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+# 根据需要编辑自动生成的 .env
+.\mcnet.ps1 up
+.\mcnet.ps1 ps
+```
+
+若 PowerShell 执行策略阻止运行脚本，可在当前会话执行 `Set-ExecutionPolicy -Scope Process Bypass`，再运行安装命令。管理命令与 Bash 版一致，例如 `.\mcnet.ps1 logs-main`、`.\mcnet.ps1 update`。
+
+## 玩家接入
+
+| 入口 | 默认地址 | 环境变量 |
+|---|---|---|
+| Java 版 | `服务器地址:25565`，TCP | `PROXY_PORT` |
+| 基岩版 | `服务器地址:19132`，UDP | `BEDROCK_PORT` |
+| MCSManager 网页 | `http://服务器地址:23333` | `MCSM_WEB_PORT` |
+| MCSManager 守护进程 | `服务器地址:24444` | `MCSM_DAEMON_PORT` |
+
+外网接入需要在防火墙和路由器上放行相应协议。基岩版使用 UDP；仅放行 TCP 19132 无法连接。
+
+### 白名单与控制台
+
+三个子服默认启用白名单，分别维护各自的玩家列表。在主服控制台中添加玩家：
+
+```bash
+docker attach mcnet-main
+```
+
+然后输入 Minecraft 命令：
+
+```text
+whitelist add PlayerName
+op PlayerName
+```
+
+退出附加控制台时依次按 `Ctrl+P`、`Ctrl+Q`，让服务器继续运行。镜像服、创造服分别使用 `mcnet-mirror`、`mcnet-create`。基岩版玩家的白名单名称以实际登录日志为准。
+
+脚本也提供 `console-main`、`console-mirror`、`console-create`，通过 RCON 执行 Minecraft 命令；首次使用会尝试安装 `mcrcon`。MCDR 的 `!!` 命令通过附加控制台输入。
+
+### 基岩版认证
+
+Geyser 和 Floodgate 随代理镜像安装。首次启动后，Geyser 在 `data/proxy/plugins/Geyser-Velocity/config.yml` 生成配置。
+
+如果要让基岩版玩家通过 Floodgate 认证，在现有配置的 `java` 节中设置：
+
+```yaml
+java:
+  auth-type: floodgate
+```
+
+保留该文件中的其他设置，再执行 `docker compose restart proxy`。`online` 模式使用 Java 账号认证；安装 Floodgate 插件后仍需选择对应的认证模式。详细设置见 [Floodgate 官方说明](https://geysermc.org/wiki/floodgate/setup/)。
+
+`BEDROCK_PORT` 调整宿主机映射端口；Geyser 在容器内仍监听 19132。Floodgate 配置和 `key.pem` 保存在 `data/proxy/plugins/floodgate/`，更新镜像时保留。
+
+## 配置与数据
+
+所有路径均相对于部署目录。
+
+```text
+mcnet/
 ├── compose.yaml
-├── Makefile
-├── packages.toml           # Mod/plugin 注册表（单源）
-├── scripts/
-│   └── resolve-packages.py # 版本解析脚本
-├── proxy/                  Velocity 代理镜像
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   └── templates/velocity.toml.tmpl
-├── shared/                 子服共用
-│   ├── Dockerfile.server
-│   └── entrypoint.sh
-├── base/                   Base 镜像（JDK + MCDR + Fabric）
-│   ├── Dockerfile
-│   └── mcdr/config.yml.tmpl
-└── servers/
-    ├── survival/
-    │   └── templates/{server.properties,fabricproxy-lite.toml}.tmpl
-    └── creative/
-        └── templates/{server.properties,fabricproxy-lite.toml}.tmpl
+├── .env
+├── mcnet.sh / mcnet.ps1
+└── data/
+    ├── proxy/
+    │   ├── velocity.toml
+    │   └── plugins/                 # 代理插件及其运行配置
+    ├── main/                       # mirror、create 使用相同结构
+    │   ├── config.yml              # MCDR 启动命令和配置
+    │   ├── config/                 # MCDR 插件配置
+    │   ├── plugins/                # MCDR 插件链接或用户添加的插件
+    │   └── server/
+    │       ├── server.properties
+    │       ├── config/             # Fabric Mod 配置
+    │       ├── mods/               # 用户额外添加的 Mod
+    │       └── world/              # 世界目录，由 level-name 决定
+    └── mcsm/                       # 面板数据、守护进程数据和日志
 ```
 
-## 常用命令
+数据使用宿主机目录挂载。更新或移除容器会保留 `data/`；`clean-data` 命令会删除整个目录，包括世界和面板数据。
+
+### `.env` 的主要设置
+
+| 设置 | 用途 |
+|---|---|
+| `GHCR_OWNER` | 镜像所属账号，默认 `abwuge` |
+| `IMAGE_TAG` | 游戏镜像标签，默认 `latest` |
+| `IMAGE_PROXY` / `IMAGE_MAIN` / `IMAGE_MIRROR` / `IMAGE_CREATE` | 覆盖某个服务的完整镜像地址 |
+| `VELOCITY_FORWARDING_SECRET` | 代理与子服共用的转发密钥 |
+| `RCON_PASSWORD` | 子服 RCON 密码 |
+| `MAIN_XMS` / `MAIN_XMX` 等 | 首次生成子服 MCDR 配置时使用的 JVM 内存 |
+| `PROXY_PORT` / `BEDROCK_PORT` | 玩家入口的宿主机端口 |
+| `MCSM_WEB_PORT` / `MCSM_DAEMON_PORT` | 面板与守护进程的宿主机端口 |
+| `MOTD_PROXY` | 首次生成 Velocity 配置时使用的 MiniMessage 文本 |
+
+`.env` 不入库。`init` 只在文件不存在时生成随机密钥；已有 `.env` 会保留。
+
+### 修改已有服务
+
+`velocity.toml`、子服 `server.properties`、FabricProxy-Lite 配置和 MCDR `config.yml` 都在首次启动时由模板生成。后续修改运行目录里的文件，避免本地设置被模板覆盖。
+
+- 子服内存：修改 `data/<子服>/config.yml` 中 `start_command` 的 `-Xms`、`-Xmx`，再重启该子服。`.env` 中的值用于新生成的配置。
+- 游戏设置：修改 `data/<子服>/server/server.properties`，再重启该子服。
+- 代理 MOTD 和路由：修改 `data/proxy/velocity.toml`，再重启代理。
+- 代理内存：修改 `compose.yaml` 中 `proxy.environment` 的 `XMS`、`XMX`，再执行 `docker compose up -d proxy`。
+- 宿主机端口或镜像地址：修改 `.env`，再执行 `docker compose up -d` 应用 Compose 配置。
+
+轮换转发密钥或 RCON 密码时，同步修改 `.env` 和已有运行配置。代理的 `forwarding.secret` 会在每次启动时写入；子服的转发密钥和 RCON 密码保存在首次生成的配置中。
+
+## 日常管理与更新
+
+在部署目录执行：
 
 ```bash
-make help              # 列出所有 make 目标
-make ps                # 容器状态
-make logs-survival     # 跟 survival 日志
-make console-survival  # RCON 交互(首次会自动 apt 装 mcrcon, 慢)
-make upgrade           # docker compose pull && up -d
+./mcnet.sh help
+./mcnet.sh ps
+./mcnet.sh logs-proxy
+./mcnet.sh logs-main
+./mcnet.sh restart
+./mcnet.sh down
 ```
 
-## 数据持久化
+`restart` 重启现有容器；`up` 应用 Compose 配置并启动服务。镜像更新会重建对应容器，期间玩家连接会中断。
 
-世界、配置、白名单、ops 全部在 docker named volume：
-- `mcnet_proxy-data`
-- `mcnet_survival-data`
-- `mcnet_creative-data`
+### 更新安装文件和全部服务镜像
 
-迁移到新机器：
 ```bash
-make down
-docker run --rm -v mcnet_survival-data:/d -v $PWD:/b alpine tar caf /b/survival.tar.zst -C /d .
-# 拷到新机后反向 untar 到同名 volume
+./mcnet.sh update
 ```
 
-## 安全
+该命令重新下载 `compose.yaml`、`.env.example` 和管理脚本，再执行 `docker compose pull`、`docker compose up -d`。现有 `.env` 和 `data/` 保留；自行修改的 Compose 文件会被下载版本替换。
 
-- `.env` 不入 git
-- 子服 25565/25575 不对宿主暴露，仅在 docker 内网
-- Bedrock 端口 19132/udp 暴露到宿主
+### 只更新游戏镜像
 
-## 已安装的 Mod/Plugin
+```bash
+docker compose pull main mirror create proxy
+docker compose up -d main mirror create proxy
+```
 
-**子服 (Fabric):**
-- fabric-api, fabric-carpet, carpet-tis-addition, gugle-carpet-addition
-- fabricproxy-lite (modern forwarding)
-- luckperms, vanilla-permissions
-- lithium, krypton (性能优化)
-- servux, syncmatica, skinrestorer (可选)
+GitHub Actions 负责构建、发布镜像，服务器执行上述命令后才会部署新版本。公开 GHCR 镜像可匿名拉取；自己的私有镜像需要先 `docker login ghcr.io`。仓库与镜像的可见性分别配置，参见 [GitHub Packages 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)。
 
-**代理 (Velocity):**
-- chathub (跨服聊天)
-- geyser + floodgate (Bedrock 支持)
-- viaversion (跨版本客户端)
+`latest` 跟随最新发布。`sha-<Git提交SHA>` 表示对应代码构建的镜像，同一提交再次解析上游版本时仍可能更新该标签。需要固定某次构建时，用 `IMAGE_MAIN` 等变量指定 `ghcr.io/abwuge/mc-main@sha256:镜像摘要`。
+
+### 查看实际版本
+
+```bash
+docker compose exec main cat /opt/server/mods.resolved.json
+docker compose exec proxy cat /opt/proxy/plugins.resolved.json
+docker compose exec proxy cat /opt/velocity.version
+```
+
+解析结果记录 Minecraft、Fabric 和各 Mod／插件的版本。结合启动日志确认实际加载情况；用户手动放入的插件可能覆盖镜像内的同名文件。
+
+## Mod、插件与版本选择
+
+[packages.toml](packages.toml) 是包注册表，[resolve-packages.py](scripts/resolve-packages.py) 在构建时选择版本。
+
+| 类型 | 内容 |
+|---|---|
+| 生电与基础 Mod | Fabric API、Carpet、Carpet TIS Addition、GugleCarpetAddition |
+| 性能 Mod | Lithium、Krypton |
+| 转发与权限 Mod | FabricProxy-Lite、LuckPerms、Vanilla Permissions |
+| 可选 Mod | Servux、Syncmatica、SkinRestorer |
+| Velocity 插件 | ChatHub、Geyser、Floodgate、ViaVersion |
+| MCDR 插件 | PrimeBackup、MirrorMcsmcdR |
+
+Minecraft 版本取所有必需 Mod 支持的正式游戏版本交集，再选其中最新的一版。Modrinth Fabric Mod 接受正式版和 Beta；因此 Minecraft 的正式版本也可以搭配 Beta Mod。可选 Mod 不限制版本交集，优先使用目标版本构建，缺失时尝试旧版回退或跳过。
+
+代理插件独立解析版本：Modrinth 优先正式版，没有正式版时使用 Beta；Floodgate 来自 GeyserMC 下载 API。GitHub Release 来源使用正式发布，MCDR 插件可以通过 `tag` 固定版本。当前 MirrorMcsmcdR 固定为 `v1.4.1`，以避开 `v1.7.0` 的导入错误。
+
+MCDR 插件声明的 Python 依赖会安装到镜像中，构建时还会检查插件能否导入。PrimeBackup 是否执行备份由 `data/<子服>/config/prime_backup/config.json` 控制；MirrorMcsmcdR 的镜像任务也需要单独配置。
+
+内置 Fabric Mod 从 `/opt/server/mods` 加载。额外 Mod 放入 `data/<子服>/server/mods/`；代理插件放入 `data/proxy/plugins/`；MCDR 插件放入 `data/<子服>/plugins/`。启动脚本会刷新指向镜像内插件的链接，并保留用户放入的文件。同名手动 JAR 会优先保留，换回内置版本时先移走该文件，再重启服务。
+
+## 镜像分层与下载量
+
+三个子服继承 `mc-base`，只添加各自的模板和公共启动脚本。基础镜像将 Java／系统、Minecraft／Fabric 核心、MCDR／Python 依赖、Mod、MCDR 插件与配置分成独立层；代理的 Velocity 核心、插件和配置也分别打包。
+
+发布使用 zstd 19 级压缩。`COPY --link` 保持组件层独立，固定产物时间戳使内容相同的层保留相同摘要。每次 CI 都重新解析上游包版本，未发生变化的组件继续复用原层。
+
+以下为 2026-10-01 的实测参考，口径是 `linux/amd64` 的四个游戏镜像，压缩层按摘要去重：
+
+| 情况 | 新层规模 |
+|---|---|
+| 首次完整拉取 | 合计约 373 MiB |
+| 相同内容重新构建 | 0 MiB，基础镜像 14 个层摘要全部一致 |
+| 只改子服配置 | 一个小层，测试中的文件内容约 1 KiB |
+| 只更新 Mod、核心和依赖不变 | Mod 集合层约 12.6 MiB，加少量版本信息 |
+| Minecraft／Fabric 核心变化 | 核心层约 121.5 MiB，另下载其他发生变化的层 |
+
+Mod 目前按整个集合分层，单个 Mod 更新也会下载集合层。`docker image ls` 显示解压后的镜像大小；实际传输量取决于压缩后的新层和服务器已有缓存。MCSManager、Caddy 使用各自的上游镜像。
+
+## 构建与发布
+
+### GitHub Actions
+
+| 工作流 | 触发条件 | 发布内容 |
+|---|---|---|
+| [Build base image](.github/workflows/base-image.yml) | `main` 上的 `base/`、包注册表、解析脚本或对应工作流变更；每周一 04:17 UTC（北京时间 12:17）；手动触发 | `mc-base` |
+| [Build server images](.github/workflows/build-images.yml) | `main` 上的 `proxy/`、`shared/`、`config/` 或对应工作流变更；基础镜像构建完成；手动触发 | `mc-proxy`、`mc-main`、`mc-mirror`、`mc-create` |
+
+工作流构建 `linux/amd64`、`linux/arm64`，推送 `latest` 和 `sha-<Git提交SHA>` 标签。子服构建等待基础镜像完成；由基础工作流触发时，基础构建成功才会继续。
+
+在 GitHub 的 Actions 页面可手动运行 `Build base image`，完成后自动触发游戏镜像构建。公开仓库长期没有活动时，GitHub 可能停用定时工作流；检查 Actions 状态并重新启用，规则见 [GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)。
+
+### 本地开发构建
+
+从完整仓库构建，先生成基础镜像，再构建子服和代理。下例使用默认的 `GHCR_OWNER=abwuge`；修改所属账号时，基础镜像标签应与 `.env` 一致。
+
+```bash
+git clone https://github.com/abwuge/minecraft-server.git
+cd minecraft-server
+./mcnet.sh init
+refresh="$(date +%s)"
+docker build -f base/Dockerfile --build-arg PACKAGE_REFRESH="$refresh" \
+  -t ghcr.io/abwuge/mc-base:latest .
+docker compose build --build-arg PACKAGE_REFRESH="$refresh" main mirror create proxy
+docker compose up -d main mirror create proxy
+```
+
+`PACKAGE_REFRESH` 用于重新解析上游版本。CI 使用每次运行的 ID；`SOURCE_DATE_EPOCH` 固定为 `0`，用于保持导出层的时间戳稳定。
+
+## 管理面板与可选网关
+
+MCSManager 默认随完整 Compose 部署启动。打开 `http://服务器地址:23333` 初始化管理员，再按面板提示配置守护进程连接，管理 `mcnet-main`、`mcnet-mirror`、`mcnet-create`、`mcnet-proxy` 等 Docker 实例。守护进程挂载 Docker socket，面板和守护进程端口应限制在可信的管理网络中。
+
+安装脚本只下载常规部署文件。启用 Caddy 时，先取得网关配置：
+
+```bash
+mkdir -p config/gateway
+curl -fsSL https://raw.githubusercontent.com/abwuge/minecraft-server/main/config/gateway/Caddyfile \
+  -o config/gateway/Caddyfile
+docker compose --profile gateway up -d gateway
+```
+
+默认网页入口为 `http://服务器地址:1080`，可用 `.env` 中的 `GATEWAY_PORT` 调整。Caddy 将 `/daemon/*` 请求转发到守护进程，其余请求转发到网页服务；面板中的守护进程连接地址按实际访问路径配置。
+
+## 仓库结构
+
+```text
+.github/workflows/          # 多架构构建与发布
+base/                      # 分阶段基础镜像、MCDR 模板、插件导入检查
+proxy/                     # Velocity 镜像与启动脚本
+shared/                    # 三个子服共用的镜像与启动脚本
+config/main/               # 主服首次启动模板
+config/mirror/             # 镜像服首次启动模板
+config/create/             # 创造服首次启动模板
+config/proxy/              # Velocity 首次启动模板
+config/gateway/            # Caddy 配置
+scripts/resolve-packages.py # 包版本解析与下载
+packages.toml              # Mod／插件注册表
+compose.yaml               # 服务、网络、端口和数据挂载
+.env.example               # 部署参数示例
+install.sh / install.ps1   # 安装脚本
+mcnet.sh / mcnet.ps1       # 管理脚本
+```
