@@ -38,7 +38,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import tomli
+try:
+    import tomllib as tomli
+except ModuleNotFoundError:
+    import tomli
 
 UA = "minecraft-server-resolve-packages/1.0"
 DEFAULT_REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packages.toml")
@@ -298,8 +301,8 @@ def resolve_plugins() -> dict:
 
 
 def resolve_mcdr_plugins() -> dict:
-    """Resolve every [[mcdr_plugins]] entry to its latest release.
-    Returns a lock-shaped dict: {"mcdr_plugins": [...]}.
+    """Resolve MCDR from PyPI and plugins from their configured release sources.
+    Returns a lock-shaped dict: {"mcdr_version": "...", "mcdr_plugins": [...]}.
     """
     if not MCDR_PLUGINS:
         raise SystemExit("no [[mcdr_plugins]] configured")
@@ -339,7 +342,9 @@ def resolve_mcdr_plugins() -> dict:
             raise ValueError(p["source"])
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         out = list(ex.map(_one, MCDR_PLUGINS))
-    return {"mcdr_plugins": out}
+    mcdr_version = http_get_json('https://pypi.org/pypi/mcdreforged/json')['info']['version']
+    log(f'[mcdreforged] resolved {mcdr_version}')
+    return {"mcdr_version": mcdr_version, "mcdr_plugins": out}
 
 
 def collect(workers: int = 8) -> tuple[dict, set]:

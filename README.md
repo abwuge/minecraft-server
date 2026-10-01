@@ -214,7 +214,7 @@ Minecraft 版本取所有必需 Mod 支持的正式游戏版本交集，再选�
 
 代理插件独立解析版本：Modrinth 优先正式版，没有正式版时使用 Beta；Floodgate 来自 GeyserMC 下载 API。GitHub Release 来源使用正式发布，MCDR 插件可以通过 `tag` 固定版本。当前 MirrorMcsmcdR 固定为 `v1.4.1`，以避开 `v1.7.0` 的导入错误。
 
-MCDR 插件声明的 Python 依赖会安装到镜像中，构建时还会检查插件能否导入。PrimeBackup 是否执行备份由 `data/<子服>/config/prime_backup/config.json` 控制；MirrorMcsmcdR 的镜像任务也需要单独配置。
+构建时从 PyPI 解析 MCDR 最新正式版，并安装插件声明的 Python 依赖、检查插件能否导入。版本记录在镜像的 `/opt/server/mcdr-plugins.resolved.json` 中。PrimeBackup 是否执行备份由 `data/<子服>/config/prime_backup/config.json` 控制；MirrorMcsmcdR 的镜像任务也需要单独配置。
 
 内置 Fabric Mod 从 `/opt/server/mods` 加载。额外 Mod 放入 `data/<子服>/server/mods/`；代理插件放入 `data/proxy/plugins/`；MCDR 插件放入 `data/<子服>/plugins/`。启动脚本会刷新指向镜像内插件的链接，并保留用户放入的文件。同名手动 JAR 会优先保留，换回内置版本时先移走该文件，再重启服务。
 

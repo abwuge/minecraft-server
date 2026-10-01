@@ -22,6 +22,7 @@ RUN set -eux; \
         --download /resolved/mods > /resolved/mods.resolved.json; \
     python3 /build/resolve-packages.py --kind mcdr_plugins --registry /build/packages.toml \
         --download /resolved/mcdr-plugins > /resolved/mcdr-plugins.resolved.json; \
+    jq -r .mcdr_version /resolved/mcdr-plugins.resolved.json > /resolved/mcdr.version; \
     jq '{mc_version, fabric_loader_version, fabric_installer_version}' \
         /resolved/mods.resolved.json > /resolved/fabric.json
 RUN python3 - <<'PY'
@@ -55,12 +56,12 @@ RUN set -eux; \
 
 # Mod changes do not reinstall MCDR or its Python dependencies.
 FROM system AS mcdr
-ARG MCDR_VERSION=2.16.0
 COPY --link --from=packages /resolved/requirements.txt /build/requirements.txt
+COPY --link --from=packages /resolved/mcdr.version /build/mcdr.version
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m venv /opt/mcdr \
  && /opt/mcdr/bin/pip install --no-compile --upgrade pip \
- && /opt/mcdr/bin/pip install --no-compile "mcdreforged==${MCDR_VERSION}" -r /build/requirements.txt \
+ && /opt/mcdr/bin/pip install --no-compile "mcdreforged==$(cat /build/mcdr.version)" -r /build/requirements.txt \
  && find /opt/mcdr -type d -name __pycache__ -prune -exec rm -rf {} + \
  && find /opt/mcdr -exec touch -h -d @0 {} +
 
@@ -70,7 +71,6 @@ COPY base/install-mcdr-plugins.py /build/install-mcdr-plugins.py
 RUN /opt/mcdr/bin/python /build/install-mcdr-plugins.py /opt/server/mcdr-plugins
 
 FROM system
-ARG MCDR_VERSION=2.16.0
 ENV PATH=/opt/mcdr/bin:$PATH
 
 # Independent copy layers preserve their digests when another component changes.
@@ -85,8 +85,7 @@ COPY --link base/install-mcdr-plugins.py /opt/server/install-mcdr-plugins.py
 COPY --link base/mcdr/config.yml.tmpl /opt/server/mcdr-config.yml.tmpl
 
 LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \
-      org.opencontainers.image.description="Minecraft Fabric + MCDR base image" \
-      mcdr.version="${MCDR_VERSION}"
+      org.opencontainers.image.description="Minecraft Fabric + MCDR base image"
 
 WORKDIR /data
 EXPOSE 25565 25575
