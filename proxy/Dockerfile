@@ -17,7 +17,7 @@ ARG PACKAGE_REFRESH=manual
 # Done in python rather than curl/jq because the API ships gzipped / brotli
 # responses and basic curl doesn't always decode them in the build sandbox.
 RUN python3 - <<'PY'
-import json, sys, urllib.request, gzip, io
+import json, sys, urllib.request, urllib.error, gzip, time
 UA = "minecraft-server-base/1.0 (+self-hosted build)"
 def get(url):
     req = urllib.request.Request(url, headers={
@@ -25,11 +25,20 @@ def get(url):
         "Accept": "application/json",
         "Accept-Encoding": "identity",
     })
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = r.read()
-        if r.headers.get("Content-Encoding") == "gzip":
-            data = gzip.decompress(data)
-        return json.loads(data)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+                if r.headers.get("Content-Encoding") == "gzip":
+                    data = gzip.decompress(data)
+                return json.loads(data)
+        except (TimeoutError, urllib.error.URLError, ConnectionError) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code < 500:
+                raise
+            if attempt == 2:
+                raise
+            print(f"PaperMC request failed ({error}), retrying", file=sys.stderr)
+            time.sleep(2 ** attempt)
 
 meta = get("https://fill.papermc.io/v3/projects/velocity")
 group = max(meta["versions"].keys(), key=lambda v: tuple(int(p) for p in v.split(".")))
