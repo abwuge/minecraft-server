@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {prepareDaemon, prepareWeb} = require('../mcsm/bootstrap.cjs');
+const {prepareDaemon, prepareWeb, credentials} = require('../mcsm/bootstrap.cjs');
 test('fresh panel creates four Java instances; upgrade preserves identities and data', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcnet-test-'));
   try {
@@ -38,4 +38,12 @@ test('fresh panel creates four Java instances; upgrade preserves identities and 
     prepareWeb(web,daemon);
     assert.equal(JSON.parse(fs.readFileSync(file)).ip,node.ip);
   } finally {delete process.env.MCSM_PUBLIC_URL; fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('generated administrator passwords meet the panel policy', () => {
+  for (let i=0;i<100;i++) {
+    const p=credentials().password;
+    assert.ok(p.length >= 9 && p.length <= 36);
+    assert.match(p, /(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])/);
+  }
 });

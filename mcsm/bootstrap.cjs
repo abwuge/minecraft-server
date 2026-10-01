@@ -76,6 +76,16 @@ function prepareWeb(root = 'data', daemonRoot = '/mcnet-daemon-data') {
   console.log('[mcnet] 节点地址: ' + config.ip + ':' + config.port + '/daemon/');
 }
 
+function credentials() {
+  const value = { username: process.env.MCSM_ADMIN_USER || 'admin',
+    password: process.env.MCSM_ADMIN_PASSWORD || 'Aa1' + crypto.randomBytes(18).toString('base64url') };
+  if (value.password.length < 9 || value.password.length > 36 ||
+      !/(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])/.test(value.password)) {
+    throw new Error('MCSM_ADMIN_PASSWORD 应为 9–36 位，并包含大小写字母和数字');
+  }
+  return value;
+}
+
 async function initializeAdmin() {
   const url = 'http://127.0.0.1:23333/api/auth/';
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -83,13 +93,12 @@ async function initializeAdmin() {
       const status = await (await fetch(url + 'status')).json();
       if (status.status !== 200) throw new Error('Panel is not ready');
       if (status.data.isInstall) return;
-      const credentials = { username: process.env.MCSM_ADMIN_USER || 'admin',
-        password: process.env.MCSM_ADMIN_PASSWORD || crypto.randomBytes(24).toString('hex') };
+      const admin = credentials();
       const result = await (await fetch(url + 'install', { method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        body: JSON.stringify(credentials) })).json();
+        body: JSON.stringify(admin) })).json();
       if (result.status !== 200) throw new Error('Administrator initialization failed');
-      write('data/mcnet-credentials.json', credentials);
+      write('data/mcnet-credentials.json', admin);
       console.log('[mcnet] 管理员已初始化；凭据保存在 data/mcsm/web/data/mcnet-credentials.json');
       return;
     } catch (error) {
@@ -109,5 +118,5 @@ async function main() {
   child.on('exit', code => process.exit(code ?? 0));
   if (role === 'web') await initializeAdmin();
 }
-module.exports = { prepareDaemon, prepareWeb, identifier };
+module.exports = { prepareDaemon, prepareWeb, identifier, credentials };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exit(1); });
