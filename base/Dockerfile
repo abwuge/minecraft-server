@@ -1,18 +1,9 @@
-# Base image for Minecraft subservers.
-# Self-resolving: at build time, scripts/resolve-packages.py picks the newest MC
-# version compatible with packages.toml, then fetches the matching Fabric loader,
-# installer, server launcher, and all mod jars. No version pinning files needed.
-
-FROM azul/zulu-openjdk:25-jre-headless
-
-ARG MCDR_VERSION=2.14.7
+FROM azul/zulu-openjdk:25-jre-headless AS system
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Reuse apt downloads across builds (BuildKit cache mounts). Drop the
-# auto-clean hook that wipes the cache after each install.
 RUN rm -f /etc/apt/apt.conf.d/docker-clean
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -20,68 +11,79 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         curl jq gettext-base ca-certificates tini \
         python3 python3-pip python3-venv python3-tomli
 
-# Install MCDReforged into /opt/mcdr venv (isolated from system python)
+# Resolve package metadata separately from the runtime layers.
+FROM system AS packages
+ARG PACKAGE_REFRESH=manual
+COPY scripts/resolve-packages.py /build/resolve-packages.py
+COPY packages.toml /build/packages.toml
+RUN set -eux; \
+    mkdir -p /resolved/mods /resolved/mcdr-plugins; \
+    python3 /build/resolve-packages.py --kind mods --registry /build/packages.toml \
+        --download /resolved/mods > /resolved/mods.resolved.json; \
+    python3 /build/resolve-packages.py --kind mcdr_plugins --registry /build/packages.toml \
+        --download /resolved/mcdr-plugins > /resolved/mcdr-plugins.resolved.json; \
+    jq '{mc_version, fabric_loader_version, fabric_installer_version}' \
+        /resolved/mods.resolved.json > /resolved/fabric.json
+RUN python3 - <<'PY'
+from pathlib import Path
+import zipfile
+requirements = set()
+for plugin in Path('/resolved/mcdr-plugins').iterdir():
+    with zipfile.ZipFile(plugin) as archive:
+        if 'requirements.txt' in archive.namelist():
+            requirements.update(archive.read('requirements.txt').decode().splitlines())
+Path('/resolved/requirements.txt').write_text('\n'.join(sorted(requirements)) + '\n')
+PY
+RUN find /resolved -exec touch -h -d @0 {} +
+
+# Only Minecraft, Fabric loader or installer changes rebuild this layer.
+FROM system AS fabric
+COPY --link --from=packages /resolved/fabric.json /build/fabric.json
+RUN set -eux; \
+    MC=$(jq -r .mc_version /build/fabric.json); \
+    LOADER=$(jq -r .fabric_loader_version /build/fabric.json); \
+    INSTALLER=$(jq -r .fabric_installer_version /build/fabric.json); \
+    mkdir -p /fabric; \
+    curl -fL --retry 3 --output /fabric/fabric-server-launch.jar \
+        "https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${INSTALLER}/server/jar"; \
+    printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /fabric/.fabric-version; \
+    cd /fabric && java -jar fabric-server-launch.jar nogui </dev/null; \
+    test -d .fabric && test -d libraries; \
+    rm -f eula.txt server.properties; \
+    rm -rf logs; \
+    find /fabric -exec touch -h -d @0 {} +
+
+# Mod changes do not reinstall MCDR or its Python dependencies.
+FROM system AS mcdr
+ARG MCDR_VERSION=2.14.7
+COPY --link --from=packages /resolved/requirements.txt /build/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m venv /opt/mcdr \
- && /opt/mcdr/bin/pip install --upgrade pip \
- && /opt/mcdr/bin/pip install "mcdreforged==${MCDR_VERSION}"
+ && /opt/mcdr/bin/pip install --no-compile --upgrade pip \
+ && /opt/mcdr/bin/pip install --no-compile "mcdreforged==${MCDR_VERSION}" -r /build/requirements.txt \
+ && find /opt/mcdr -type d -name __pycache__ -prune -exec rm -rf {} + \
+ && find /opt/mcdr -exec touch -h -d @0 {} +
+
+FROM mcdr AS validated-plugins
+COPY --link --from=packages /resolved/mcdr-plugins /opt/server/mcdr-plugins
+COPY base/install-mcdr-plugins.py /build/install-mcdr-plugins.py
+RUN /opt/mcdr/bin/python /build/install-mcdr-plugins.py /opt/server/mcdr-plugins
+
+FROM system
+ARG MCDR_VERSION=2.14.7
 ENV PATH=/opt/mcdr/bin:$PATH
 
-# Resolve everything: MC version, Fabric loader+installer, mod set.
-# All driven by packages.toml; no manual version locking.
-COPY scripts/resolve-packages.py /opt/server/resolve-packages.py
-COPY packages.toml                /opt/server/packages.toml
-RUN --mount=type=cache,target=/opt/server/download-cache \
-    set -eux; \
-    mkdir -p /opt/server/mods /opt/server/download-cache; \
-    /usr/bin/python3 /opt/server/resolve-packages.py \
-        --kind mods \
-        --registry /opt/server/packages.toml \
-        --download /opt/server/mods \
-        > /opt/server/mods.resolved.json; \
-    MC=$(jq -r .mc_version                /opt/server/mods.resolved.json); \
-    LOADER=$(jq -r .fabric_loader_version /opt/server/mods.resolved.json); \
-    INSTALLER=$(jq -r .fabric_installer_version /opt/server/mods.resolved.json); \
-    echo "MC=${MC} loader=${LOADER} installer=${INSTALLER}"; \
-    curl -fL --retry 3 \
-      --create-dirs \
-      --output /opt/server/download-cache/fabric-server-launch.jar \
-      "https://meta.fabricmc.net/v2/versions/loader/${MC}/${LOADER}/${INSTALLER}/server/jar"; \
-    cp /opt/server/download-cache/fabric-server-launch.jar /opt/server/fabric-server-launch.jar; \
-    printf '%s-%s-%s\n' "$MC" "$LOADER" "$INSTALLER" > /opt/server/.fabric-version; \
-    # Prefetch fabric libraries (libraries/, .fabric/) into /opt/server so
-    # runtime never needs to download them. The bundled launcher unpacks deps
-    # on first run, then exits because eula.txt is missing.
-    # Mods are temporarily moved aside: with them in cwd, krypton/lithium spawn
-    # non-daemon threads in onInitializeServer that keep the JVM alive forever
-    # after Main.main returns from the EULA check.
-    mv /opt/server/mods /opt/server/mods.staged; \
-    cd /opt/server \
-      && java -jar fabric-server-launch.jar nogui </dev/null; \
-    mv /opt/server/mods.staged /opt/server/mods; \
-    test -d /opt/server/.fabric && test -d /opt/server/libraries; \
-    rm -f /opt/server/eula.txt /opt/server/server.properties; \
-    rm -rf /opt/server/logs; \
-    echo "fabric libraries prefetched into /opt/server/{libraries,.fabric}"
+# Independent copy layers preserve their digests when another component changes.
+COPY --link --from=mcdr /opt/mcdr /opt/mcdr
+COPY --link --from=fabric /fabric/ /opt/server/
+COPY --link --from=packages /resolved/mods /opt/server/mods
+COPY --link --from=validated-plugins /opt/server/mcdr-plugins /opt/server/mcdr-plugins
+COPY --link --from=packages /resolved/mods.resolved.json /resolved/mcdr-plugins.resolved.json /opt/server/
+COPY --link scripts/resolve-packages.py /opt/server/resolve-packages.py
+COPY --link packages.toml /opt/server/packages.toml
+COPY --link base/install-mcdr-plugins.py /opt/server/install-mcdr-plugins.py
+COPY --link base/mcdr/config.yml.tmpl /opt/server/mcdr-config.yml.tmpl
 
-# MCDR config template (rendered into /data/config.yml on first start)
-COPY base/mcdr/config.yml.tmpl /opt/server/mcdr-config.yml.tmpl
-
-# Resolve and download MCDR plugins (PrimeBackup, MirrorMcsmcdR, ...).
-RUN --mount=type=cache,target=/opt/server/download-cache \
-    set -eux; \
-    mkdir -p /opt/server/mcdr-plugins; \
-    /usr/bin/python3 /opt/server/resolve-packages.py \
-        --kind mcdr_plugins \
-        --registry /opt/server/packages.toml \
-        --download /opt/server/mcdr-plugins \
-        > /opt/server/mcdr-plugins.resolved.json
-
-COPY base/install-mcdr-plugins.py /opt/server/install-mcdr-plugins.py
-RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/mcdr/bin/python /opt/server/install-mcdr-plugins.py /opt/server/mcdr-plugins
-
-# Surface the resolved versions as image labels for traceability.
 LABEL org.opencontainers.image.source="https://github.com/OWNER/minecraft-server" \
       org.opencontainers.image.description="Minecraft Fabric + MCDR base image" \
       mcdr.version="${MCDR_VERSION}"

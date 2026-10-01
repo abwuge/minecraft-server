@@ -98,11 +98,13 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
-          outputs: type=image,compression=zstd,compression-level=19,force-compression=true,oci-mediatypes=true
+          outputs: type=image,compression=zstd,compression-level=19,force-compression=true,oci-mediatypes=true,rewrite-timestamp=true
           tags: |
             ghcr.io/${{ steps.owner.outputs.lc }}/mc-${{ matrix.role }}:latest
             ghcr.io/${{ steps.owner.outputs.lc }}/mc-${{ matrix.role }}:sha-${{ github.sha }}
           build-args: |
+            SOURCE_DATE_EPOCH=0
+            PACKAGE_REFRESH=${{ github.run_id }}
             ${{ matrix.role == 'proxy' && '' || format('BASE_IMAGE=ghcr.io/{0}/mc-base:latest', steps.owner.outputs.lc) }}
             ${{ matrix.role == 'proxy' && '' || format('SERVER_NAME={0}', matrix.server_name) }}
           cache-from: type=gha,scope=${{ matrix.role }}
