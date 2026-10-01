@@ -68,6 +68,8 @@ done
 shopt -u nullglob
 
 # ---------- 4. Fabric launcher symlink ----------
+python3 /opt/mcnet/runtime.py prepare-server
+
 # The launcher jar lives in the read-only base image; symlink it next to the
 # world so the java cwd resolution works without copying.
 LAUNCHER=$SERVER/fabric-server-launch.jar

@@ -1,132 +1,97 @@
-# mcnet.ps1 — Minecraft 群组服管理脚本 (Windows PowerShell)
-# 用法: .\mcnet.ps1 <command>
+# Minecraft 群组服管理脚本 (Windows PowerShell)
 param(
-    [Parameter(Position = 0)]
-    [string]$Command = "help"
+    [Parameter(Position=0)][string]$Command = 'help',
+    [Parameter(Position=1, ValueFromRemainingArguments=$true)][string[]]$Arguments = @()
 )
-
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-$REPO      = "abwuge/minecraft-server"
-$BRANCH    = "main"
-$BASE_URL  = "https://raw.githubusercontent.com/$REPO/$BRANCH"
-$COMPOSE   = "docker compose"
-
-# ---------- 内部工具 ----------
-
-function Read-EnvVar([string]$Name) {
-    if (-not (Test-Path ".env")) { return $null }
-    $line = Get-Content ".env" | Where-Object { $_ -match "^${Name}=" } | Select-Object -First 1
-    if ($line) { return $line.Substring($Name.Length + 1) }
-    return $null
+$ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
+$BaseUrl = 'https://raw.githubusercontent.com/abwuge/minecraft-server/main'
+function Compose {
+    & docker compose @args
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose 执行失败 ($LASTEXITCODE)" }
 }
-
-function New-RandomHex([int]$Bytes) {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $buf = New-Object byte[] $Bytes
-    $rng.GetBytes($buf)
-    return ([System.BitConverter]::ToString($buf)).Replace('-', '').ToLower()
-}
-
-function Invoke-Init {
-    if (-not (Test-Path ".env")) {
-        Write-Host "[init] .env 不存在, 正在生成..."
-        $fwd  = New-RandomHex 24
-        $rcon = New-RandomHex 16
-        (Get-Content ".env.example") `
-            -replace 'VELOCITY_FORWARDING_SECRET=change-me-to-random-hex', "VELOCITY_FORWARDING_SECRET=$fwd" `
-            -replace 'RCON_PASSWORD=change-me-rcon', "RCON_PASSWORD=$rcon" |
-            Set-Content ".env" -Encoding UTF8
-        Write-Host "[init] .env 已生成 (密钥已随机生成)"
-    } else {
-        Write-Host "[init] .env 已存在, 跳过"
+function Init {
+    $script:EnvText = if (Test-Path '.env') { [IO.File]::ReadAllText((Join-Path $PWD '.env')) } else { [IO.File]::ReadAllText((Join-Path $PWD '.env.example')) }
+    function Read-Value($Key) {
+        $m = [regex]::Match($script:EnvText, "(?m)^$Key=(.*)$")
+        if ($m.Success) { return $m.Groups[1].Value.Trim() }; return ''
     }
-}
-
-function Invoke-Console([string]$Service) {
-    $pw = Read-EnvVar "RCON_PASSWORD"
-    if (-not $pw) {
-        Write-Error "[error] 未找到 RCON_PASSWORD，请先运行 .\mcnet.ps1 init"
-        exit 1
+    function Set-Value($Key, $Value) {
+        $pattern = "(?m)^$Key=.*$"
+        if ([regex]::IsMatch($script:EnvText,$pattern)) {
+            $replacement = "$Key=$Value"
+            $script:EnvText = [regex]::Replace($script:EnvText,$pattern,$replacement)
+        } else { $script:EnvText += "`n$Key=$Value`n" }
     }
-    & docker compose exec -e "RCON_PASSWORD=$pw" $Service sh -c `
-        'command -v mcrcon >/dev/null 2>&1 || apt-get install -y mcrcon >/dev/null; mcrcon -H 127.0.0.1 -P 25575 -p "$RCON_PASSWORD" -t'
+    foreach ($item in @(@('VELOCITY_FORWARDING_SECRET','change-me-to-random-hex',24),@('RCON_PASSWORD','change-me-rcon',16))) {
+        if ((Read-Value $item[0]) -in @('', $item[1])) {
+            $bytes = New-Object byte[] $item[2]
+            $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+            try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+            Set-Value $item[0] ([BitConverter]::ToString($bytes).Replace('-','').ToLower())
+        }
+    }
+    if (-not (Read-Value 'ONLINE_MODE')) { Set-Value 'ONLINE_MODE' 'true' }
+    if (-not (Read-Value 'WHITE_LIST')) { Set-Value 'WHITE_LIST' (Read-Value 'ONLINE_MODE') }
+    if (-not (Read-Value 'MCSM_NODE_ADDRESS') -and -not (Read-Value 'MCSM_PUBLIC_URL')) {
+        $udp = New-Object Net.Sockets.UdpClient
+        try { $udp.Connect('8.8.8.8',80); Set-Value 'MCSM_NODE_ADDRESS' $udp.Client.LocalEndPoint.Address.ToString() }
+        finally { $udp.Dispose() }
+    }
+    [IO.File]::WriteAllText((Join-Path $PWD '.env'),$script:EnvText,(New-Object Text.UTF8Encoding $false))
+    Write-Host '[init] 配置已就绪'
 }
-
-function Invoke-Download([string]$File) {
-    Invoke-WebRequest "$BASE_URL/$File" -OutFile $File
+function Check-Service($Service) {
+    if ($Service -notin @('proxy','main','mirror','create','mcsm-web','mcsm-daemon','gateway')) { throw "未知服务: $Service" }
 }
-
-# ---------- 命令分发 ----------
-
+function Runtime {
+    Compose run --rm --no-deps -T --entrypoint python3 -v "${PWD}:/mcnet-host" proxy /opt/mcnet/runtime.py @args
+}
+function Up {
+    Compose up -d --wait @args
+    Runtime whitelist sync
+}
 switch ($Command) {
-    "help" {
-        @"
-用法: .\mcnet.ps1 <command>
-
-命令:
-  init              生成 .env 并随机生成密钥 (up 时自动执行)
-  build             构建所有镜像 (开发用)
-  up                启动群组服
-  down              停止并移除容器 (数据保留)
-  restart           重启所有服务
-  ps                查看容器状态
-  logs              跟随所有日志
-  logs-proxy        跟随 proxy 日志
-  logs-main         跟随 main 日志
-  logs-mirror       跟随 mirror 日志
-  logs-create       跟随 create 日志
-  console-main      进入 main RCON 控制台
-  console-mirror    进入 mirror RCON 控制台
-  console-create    进入 create RCON 控制台
-  update            下载最新配置与镜像并滚动重启
-  clean-data        危险: 删除所有 data\ 目录 (世界将丢失!)
-"@
+    'help' {
+        @'
+用法: .\mcnet.ps1 命令 [子命令]
+  init / up [服务] / down / restart [服务] / ps [服务] / build [服务]
+  logs [服务]                        跟随日志，例如 logs proxy
+  console 服务                       控制台；Ctrl+P、Ctrl+Q 退出
+  mode online|offline|status          在线默认开白名单，离线默认关
+  whitelist list / on / off / sync    统一管理三个子服
+  whitelist add|remove java|bedrock "玩家名称" [--xuid XUID]
+  update                             下载最新配置和镜像并启动
+  clean-data                         删除全部数据（需输入 YES）
+服务: proxy、main、mirror、create、mcsm-web、mcsm-daemon
+'@
     }
-    "init"  { Invoke-Init }
-    "build" { Invoke-Expression "$COMPOSE build" }
-
-    "up" {
-        Invoke-Init
-        Invoke-Expression "$COMPOSE up -d"
+    'init' { Init }
+    'up' { Init; foreach($s in $Arguments) { Check-Service $s }; Up @Arguments }
+    {$_ -in 'build','restart','ps'} { foreach($s in $Arguments) { Check-Service $s }; Compose $Command @Arguments }
+    'down' { Compose down @Arguments }
+    'logs' { foreach($s in $Arguments) { Check-Service $s }; Compose logs -f --tail=200 @Arguments }
+    'console' {
+        if ($Arguments.Count -ne 1) { throw '用法: console 服务' }
+        Check-Service $Arguments[0]
+        & docker attach "mcnet-$($Arguments[0])"
+        if ($LASTEXITCODE -ne 0) { throw '连接控制台失败' }
     }
-
-    "down"    { Invoke-Expression "$COMPOSE down" }
-    "restart" { Invoke-Expression "$COMPOSE restart" }
-    "ps"      { Invoke-Expression "$COMPOSE ps" }
-    "logs"    { Invoke-Expression "$COMPOSE logs -f --tail=200" }
-
-    "logs-proxy"  { Invoke-Expression "$COMPOSE logs -f --tail=200 proxy" }
-    "logs-main"   { Invoke-Expression "$COMPOSE logs -f --tail=200 main" }
-    "logs-mirror" { Invoke-Expression "$COMPOSE logs -f --tail=200 mirror" }
-    "logs-create" { Invoke-Expression "$COMPOSE logs -f --tail=200 create" }
-
-    "console-main"   { Invoke-Console "main" }
-    "console-mirror" { Invoke-Console "mirror" }
-    "console-create" { Invoke-Console "create" }
-
-    "update" {
-        Write-Host "[update] 下载最新配置..."
-        Invoke-Download "compose.yaml"
-        Invoke-Download ".env.example"
-        # 更新脚本自身
-        Invoke-Download "mcnet.ps1"
-        Write-Host "[update] 拉取最新镜像..."
-        Invoke-Expression "$COMPOSE pull"
-        Invoke-Expression "$COMPOSE up -d"
-        Write-Host "[update] 更新完成，请用新脚本继续操作"
+    'mode' {
+        if ($Arguments.Count -ne 1) { throw '用法: mode online|offline|status' }
+        Init; Runtime mode @Arguments
+        if ($Arguments[0] -ne 'status') { Up }
     }
-
-    "clean-data" {
-        $ans = Read-Host "确认删除所有 data\ 目录? 输入 YES"
-        if ($ans -ne "YES") { Write-Host "已取消"; exit 0 }
-        Remove-Item -Recurse -Force "data" -ErrorAction SilentlyContinue
-        Write-Host "[clean-data] 已删除 data\"
+    'whitelist' { Init; Runtime whitelist @Arguments }
+    'update' {
+        foreach($f in @('compose.yaml','.env.example')) { Invoke-WebRequest "$BaseUrl/$f" -OutFile $f }
+        Invoke-WebRequest "$BaseUrl/mcnet.ps1" -OutFile 'mcnet.ps1.tmp'
+        Move-Item -Force 'mcnet.ps1.tmp' 'mcnet.ps1'
+        Init; Compose pull; Up
     }
-
-    default {
-        Write-Error "[error] 未知命令: $Command`n运行 '.\mcnet.ps1 help' 查看帮助"
-        exit 1
+    'clean-data' {
+        if ((Read-Host '确认删除全部 data/？输入 YES') -eq 'YES') { Compose down; Remove-Item -Recurse -Force data }
     }
+    default { throw "未知命令: $Command；运行 .\mcnet.ps1 help 查看帮助" }
 }

@@ -1,0 +1,4 @@
+FROM ghcr.io/mcsmanager/mcsmanager-daemon:latest
+COPY --link mcsm/bootstrap.cjs /opt/mcnet/bootstrap.cjs
+COPY --link scripts/mcsm-container.cjs /opt/mcnet/mcsm-container.cjs
+CMD ["node", "/opt/mcnet/bootstrap.cjs", "daemon"]

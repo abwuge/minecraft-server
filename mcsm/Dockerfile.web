@@ -1,0 +1,3 @@
+FROM ghcr.io/mcsmanager/mcsmanager-web:latest
+COPY --link mcsm/bootstrap.cjs /opt/mcnet/bootstrap.cjs
+CMD ["node", "/opt/mcnet/bootstrap.cjs", "web"]

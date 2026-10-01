@@ -7,6 +7,10 @@ on:
       - 'proxy/**'
       - 'shared/**'
       - 'config/**'
+      - 'mcsm/**'
+      - 'scripts/mcnet-runtime.py'
+      - 'scripts/mcsm-container.cjs'
+      - 'tests/**'
       - '.github/workflows/build-images.yml'
   workflow_dispatch:
   workflow_run:
@@ -75,8 +79,18 @@ jobs:
           - role: create
             dockerfile: shared/Dockerfile.server
             server_name: create
+          - role: mcsm-web
+            dockerfile: mcsm/Dockerfile.web
+          - role: mcsm-daemon
+            dockerfile: mcsm/Dockerfile.daemon
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify runtime configuration and panel bootstrap
+        run: |
+          python3 -B -m unittest discover -s tests
+          node --test tests/mcsm.test.cjs
+          bash -n mcnet.sh proxy/entrypoint.sh shared/entrypoint.sh
 
       - name: Compute owner (lowercase)
         id: owner
@@ -105,7 +119,7 @@ jobs:
           build-args: |
             SOURCE_DATE_EPOCH=0
             PACKAGE_REFRESH=${{ github.run_id }}
-            ${{ matrix.role == 'proxy' && '' || format('BASE_IMAGE=ghcr.io/{0}/mc-base:latest', steps.owner.outputs.lc) }}
-            ${{ matrix.role == 'proxy' && '' || format('SERVER_NAME={0}', matrix.server_name) }}
+            ${{ matrix.server_name == '' && '' || format('BASE_IMAGE=ghcr.io/{0}/mc-base:latest', steps.owner.outputs.lc) }}
+            ${{ matrix.server_name == '' && '' || format('SERVER_NAME={0}', matrix.server_name) }}
           cache-from: type=gha,scope=${{ matrix.role }}
           cache-to: type=gha,mode=max,scope=${{ matrix.role }}

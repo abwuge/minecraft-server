@@ -71,6 +71,7 @@ COPY --link --from=plugins /opt/proxy/plugins.resolved.json /opt/proxy/plugins.r
 COPY --link scripts/resolve-packages.py /opt/proxy/resolve-packages.py
 COPY --link packages.toml /opt/proxy/packages.toml
 COPY --link config/proxy /opt/proxy/templates
+COPY --link scripts/mcnet-runtime.py /opt/mcnet/runtime.py
 COPY --link --chmod=755 proxy/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 25565

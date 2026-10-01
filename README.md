@@ -4,7 +4,7 @@
 
 | 服务 | 容器 | 用途 |
 |---|---|---|
-| `proxy` | `mcnet-proxy` | Velocity、Geyser、Floodgate、ViaVersion 和跨服聊天 |
+| `proxy` | `mcnet-proxy` | Velocity、Geyser、Floodgate、ViaVersion、ViaBackwards 和跨服聊天 |
 | `main` | `mcnet-main` | 主生电世界，生存模式 |
 | `mirror` | `mcnet-mirror` | 镜像服，镜像任务通过 MirrorMcsmcdR 配置 |
 | `create` | `mcnet-create` | 创造模式的超平坦试验场 |
@@ -29,7 +29,7 @@ cd mcnet
 # 根据需要编辑自动生成的 .env
 ./mcnet.sh up
 ./mcnet.sh ps
-./mcnet.sh logs-main
+./mcnet.sh logs main
 ```
 
 安装脚本下载 Compose 文件和管理脚本，生成带随机密钥的 `.env`，然后拉取镜像。启动后，三个子服通过健康检查，代理才会启动；日志中出现 `Done (...)!` 表示 Minecraft 已完成启动。跟随日志时按 `Ctrl+C` 退出查看。
@@ -52,7 +52,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/abwuge/minecraft-server/main
 .\mcnet.ps1 ps
 ```
 
-若 PowerShell 执行策略阻止运行脚本，可在当前会话执行 `Set-ExecutionPolicy -Scope Process Bypass`，再运行安装命令。管理命令与 Bash 版一致，例如 `.\mcnet.ps1 logs-main`、`.\mcnet.ps1 update`。
+若 PowerShell 执行策略阻止运行脚本，可在当前会话执行 `Set-ExecutionPolicy -Scope Process Bypass`，再运行安装命令。管理命令与 Bash 版一致，例如 `.\mcnet.ps1 logs main`、`.\mcnet.ps1 update`。
 
 ## 玩家接入
 
@@ -67,37 +67,35 @@ Invoke-WebRequest https://raw.githubusercontent.com/abwuge/minecraft-server/main
 
 ### 白名单与控制台
 
-三个子服默认启用白名单，分别维护各自的玩家列表。在主服控制台中添加玩家：
+三个子服共用 `data/whitelist/whitelist.json`，启动时合并已有白名单。统一接口会更新玩家身份并通过 RCON 让三个子服立即重载：
 
 ```bash
-docker attach mcnet-main
+./mcnet.sh whitelist list
+./mcnet.sh whitelist add java PlayerName
+./mcnet.sh whitelist add bedrock "Xbox Gamertag"
+./mcnet.sh whitelist remove bedrock "Xbox Gamertag"
+./mcnet.sh whitelist on
+./mcnet.sh whitelist off
+./mcnet.sh whitelist sync
 ```
 
-然后输入 Minecraft 命令：
+基岩版按 Xbox XUID 查询身份；已绑定 Java 的玩家使用绑定的 Java UUID，未绑定玩家使用 Floodgate UUID。查询服务不可用时，可在添加命令后提供 `--xuid XUID`；绑定状态仍需要查询 GeyserMC。已有白名单和玩家身份记录会保留。
 
-```text
-whitelist add PlayerName
-op PlayerName
+使用 `./mcnet.sh console main` 进入主服控制台，支持 Minecraft 和 MCDR 的 `!!` 命令。退出时依次按 `Ctrl+P`、`Ctrl+Q`。`console proxy`、`console mirror` 和 `console create` 同样可用。
+
+### 在线、离线与基岩版认证
+
+默认在线模式：Java 验证正版账号，白名单开启。离线模式关闭 Java 正版验证，默认关闭白名单。基岩版在两种模式下均使用 Xbox/Floodgate 认证，默认无需绑定 Java 账号。Geyser 认证方式、Floodgate 绑定要求和密钥路径由镜像启动流程自动设置。
+
+```bash
+./mcnet.sh mode status
+./mcnet.sh mode online
+./mcnet.sh mode offline
 ```
 
-退出附加控制台时依次按 `Ctrl+P`、`Ctrl+Q`，让服务器继续运行。镜像服、创造服分别使用 `mcnet-mirror`、`mcnet-create`。基岩版玩家的白名单名称以实际登录日志为准。
+切换会重启游戏服务，并按该模式的默认值设置白名单；随后可用 `whitelist on/off` 单独调整。Java 的在线与离线 UUID 不同，切换认证可能让玩家读取另一份背包和进度。统一白名单保留两种身份的对应关系。
 
-脚本也提供 `console-main`、`console-mirror`、`console-create`，通过 RCON 执行 Minecraft 命令；首次使用会尝试安装 `mcrcon`。MCDR 的 `!!` 命令通过附加控制台输入。
-
-### 基岩版认证
-
-Geyser 和 Floodgate 随代理镜像安装。首次启动后，Geyser 在 `data/proxy/plugins/Geyser-Velocity/config.yml` 生成配置。
-
-如果要让基岩版玩家通过 Floodgate 认证，在现有配置的 `java` 节中设置：
-
-```yaml
-java:
-  auth-type: floodgate
-```
-
-保留该文件中的其他设置，再执行 `docker compose restart proxy`。`online` 模式使用 Java 账号认证；安装 Floodgate 插件后仍需选择对应的认证模式。详细设置见 [Floodgate 官方说明](https://geysermc.org/wiki/floodgate/setup/)。
-
-`BEDROCK_PORT` 调整宿主机映射端口；Geyser 在容器内仍监听 19132。Floodgate 配置和 `key.pem` 保存在 `data/proxy/plugins/floodgate/`，更新镜像时保留。
+`BEDROCK_PORT` 调整宿主机映射端口；Geyser 在容器内监听 19132。Floodgate 配置和 `key.pem` 保存在 `data/proxy/plugins/floodgate/`。ViaVersion 与 ViaBackwards 处理代理与后端之间的版本转换；Geyser 支持的客户端版本以[官方支持列表](https://geysermc.org/wiki/geyser/supported-versions/)为准。
 
 ## 配置与数据
 
@@ -135,6 +133,8 @@ mcnet/
 | `IMAGE_PROXY` / `IMAGE_MAIN` / `IMAGE_MIRROR` / `IMAGE_CREATE` | 覆盖某个服务的完整镜像地址 |
 | `VELOCITY_FORWARDING_SECRET` | 代理与子服共用的转发密钥 |
 | `RCON_PASSWORD` | 子服 RCON 密码 |
+| `ONLINE_MODE` / `WHITE_LIST` | Java 认证与统一白名单开关 |
+| `MCSM_PUBLIC_URL` | 面板与守护进程共用的公网 HTTP(S) 地址 |
 | `MAIN_XMS` / `MAIN_XMX` 等 | 首次生成子服 MCDR 配置时使用的 JVM 内存 |
 | `PROXY_PORT` / `BEDROCK_PORT` | 玩家入口的宿主机端口 |
 | `MCSM_WEB_PORT` / `MCSM_DAEMON_PORT` | 面板与守护进程的宿主机端口 |
@@ -144,7 +144,7 @@ mcnet/
 
 ### 修改已有服务
 
-`velocity.toml`、子服 `server.properties`、FabricProxy-Lite 配置和 MCDR `config.yml` 都在首次启动时由模板生成。后续修改运行目录里的文件，避免本地设置被模板覆盖。
+`velocity.toml`、子服 `server.properties`、FabricProxy-Lite 配置和 MCDR `config.yml` 都在首次启动时由模板生成。后续在运行目录修改其它游戏设置；认证、白名单和密钥由环境变量统一控制。
 
 - 子服内存：修改 `data/<子服>/config.yml` 中 `start_command` 的 `-Xms`、`-Xmx`，再重启该子服。`.env` 中的值用于新生成的配置。
 - 游戏设置：修改 `data/<子服>/server/server.properties`，再重启该子服。
@@ -152,7 +152,7 @@ mcnet/
 - 代理内存：修改 `compose.yaml` 中 `proxy.environment` 的 `XMS`、`XMX`，再执行 `docker compose up -d proxy`。
 - 宿主机端口或镜像地址：修改 `.env`，再执行 `docker compose up -d` 应用 Compose 配置。
 
-轮换转发密钥或 RCON 密码时，同步修改 `.env` 和已有运行配置。代理的 `forwarding.secret` 会在每次启动时写入；子服的转发密钥和 RCON 密码保存在首次生成的配置中。
+认证模式、白名单开关、转发密钥和 RCON 密码在每次启动时从环境变量应用。轮换密钥或密码后执行 `./mcnet.sh up`，让所有游戏服务使用一致的设置。
 
 ## 日常管理与更新
 
@@ -161,8 +161,8 @@ mcnet/
 ```bash
 ./mcnet.sh help
 ./mcnet.sh ps
-./mcnet.sh logs-proxy
-./mcnet.sh logs-main
+./mcnet.sh logs proxy
+./mcnet.sh logs main
 ./mcnet.sh restart
 ./mcnet.sh down
 ```
@@ -208,7 +208,7 @@ docker compose exec proxy cat /opt/velocity.version
 | 性能 Mod | Lithium、Krypton |
 | 转发与权限 Mod | FabricProxy-Lite、LuckPerms、Vanilla Permissions |
 | 可选 Mod | Servux、Syncmatica、SkinRestorer |
-| Velocity 插件 | ChatHub、Geyser、Floodgate、ViaVersion |
+| Velocity 插件 | ChatHub、Geyser、Floodgate、ViaVersion、ViaBackwards |
 | MCDR 插件 | PrimeBackup、MirrorMcsmcdR |
 
 Minecraft 版本取所有必需 Mod 支持的正式游戏版本交集，再选其中最新的一版。Modrinth Fabric Mod 接受正式版和 Beta；因此 Minecraft 的正式版本也可以搭配 Beta Mod。可选 Mod 不限制版本交集，优先使用目标版本构建，缺失时尝试旧版回退或跳过。
@@ -235,7 +235,7 @@ MCDR 插件声明的 Python 依赖会安装到镜像中，构建时还会检查�
 | 只更新 Mod、核心和依赖不变 | Mod 集合层约 12.6 MiB，加少量版本信息 |
 | Minecraft／Fabric 核心变化 | 核心层约 121.5 MiB，另下载其他发生变化的层 |
 
-Mod 目前按整个集合分层，单个 Mod 更新也会下载集合层。`docker image ls` 显示解压后的镜像大小；实际传输量取决于压缩后的新层和服务器已有缓存。MCSManager、Caddy 使用各自的上游镜像。
+Mod 目前按整个集合分层，单个 Mod 更新也会下载集合层。`docker image ls` 显示解压后的镜像大小；实际传输量取决于压缩后的新层和服务器已有缓存。MCSManager 镜像以官方镜像为基础，只增加自动配置和容器连接脚本；Caddy 使用上游镜像。
 
 ## 构建与发布
 
@@ -269,7 +269,13 @@ docker compose up -d main mirror create proxy
 
 ## 管理面板与可选网关
 
-MCSManager 默认随完整 Compose 部署启动。打开 `http://服务器地址:23333` 初始化管理员，再按面板提示配置守护进程连接，管理 `mcnet-main`、`mcnet-mirror`、`mcnet-create`、`mcnet-proxy` 等 Docker 实例。守护进程挂载 Docker socket，面板和守护进程端口应限制在可信的管理网络中。
+MCSManager 随完整 Compose 部署启动。镜像会自动配置节点、登记四个现有游戏容器，并将实例类型设为 Minecraft Java 版服务端。首次启动自动创建管理员；可在 `.env` 设置 `MCSM_ADMIN_USER` 和 `MCSM_ADMIN_PASSWORD`，密码留空时随机生成。首次生成的凭据保存在 `data/mcsm/web/data/mcnet-credentials.json`，已有管理员保持原样。
+
+`init` 自动填写宿主机 IP，直接通过 `http://服务器地址:23333` 使用面板。需要通过公网 HTTPS 复用 443 时，在 `.env` 设置 `MCSM_PUBLIC_URL=https://你的域名`，再执行 `./mcnet.sh up`。镜像自动使用对应的 WSS 地址、端口及 `/daemon/` 前缀；反向代理需将 `/daemon/` 转发到 24444，其余路径转发到 23333，并启用 HTTP/1.1 和 WebSocket。Nginx 面板 `server` 可设置 `large_client_header_buffers 4 16k;` 以容纳登录 Cookie。
+
+容器连接脚本随守护进程镜像安装，通过 Docker API 连接日志、标准输入及启停。文件管理器使用现有 `data/main`、`data/mirror`、`data/create`、`data/proxy` 目录。
+
+停止和重启按钮保留原容器；强制停止请使用自定义命令“强制停止容器”，内置强制结束只会结束连接进程。实例的进程资源统计对应连接进程，游戏容器资源可用 `docker stats` 查看。守护进程退出时保留游戏容器，重启后重新连接；启动流程为此关闭节点的软关闭，并启用实例自动启动。Compose 更新按容器名称重新连接。
 
 安装脚本只下载常规部署文件。启用 Caddy 时，先取得网关配置：
 

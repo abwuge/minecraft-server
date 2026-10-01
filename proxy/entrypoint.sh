@@ -31,6 +31,8 @@ fi
 echo -n "${VELOCITY_FORWARDING_SECRET}" > "$DATA_DIR/forwarding.secret"
 chmod 600 "$DATA_DIR/forwarding.secret"
 
+python3 /opt/mcnet/runtime.py prepare-proxy
+
 exec java -Xms${XMS:-512M} -Xmx${XMX:-1G} \
   -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions \
   -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch \

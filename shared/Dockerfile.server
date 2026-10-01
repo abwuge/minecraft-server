@@ -8,6 +8,7 @@ WORKDIR /data
 
 # 共享脚本
 COPY --link --chmod=755 shared/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --link scripts/mcnet-runtime.py /opt/mcnet/runtime.py
 
 # Per-subserver config templates (mods are inherited from the base image)
 COPY --link config/${SERVER_NAME} /opt/server/templates
