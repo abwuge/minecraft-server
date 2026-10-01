@@ -1,9 +1,20 @@
-:{$GATEWAY_PORT:80}
-
-handle /daemon/* {
-	reverse_proxy mcsm-daemon:24444
+{
+	auto_https disable_redirects
 }
 
-handle {
-	reverse_proxy mcsm-web:23333
+(mcsm) {
+	handle /daemon/* {
+		reverse_proxy mcnet-mcsm-daemon:24444
+	}
+	handle {
+		reverse_proxy mcnet-mcsm-web:23333
+	}
+}
+
+:80 {
+	import mcsm
+}
+
+{$MCSM_HOST:localhost} {
+	import mcsm
 }

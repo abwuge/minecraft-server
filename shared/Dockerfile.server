@@ -16,4 +16,6 @@ COPY --link config/${SERVER_NAME} /opt/server/templates
 ENV SERVER_NAME=${SERVER_NAME}
 
 EXPOSE 25565
+HEALTHCHECK --interval=5s --timeout=3s --start-period=60s --retries=30 \
+  CMD python3 -c "import pathlib, sys; sys.exit(not any(row.split()[1].endswith(':63DD') and row.split()[3] == '0A' for p in ('/proc/net/tcp', '/proc/net/tcp6') for row in pathlib.Path(p).read_text().splitlines()[1:]))"
 CMD ["/usr/local/bin/entrypoint.sh"]

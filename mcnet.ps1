@@ -7,10 +7,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $BaseUrl = 'https://raw.githubusercontent.com/abwuge/minecraft-server/main'
-function Compose {
-    & docker compose @args
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose 执行失败 ($LASTEXITCODE)" }
-}
 function Init {
     $script:EnvText = if (Test-Path '.env') { [IO.File]::ReadAllText((Join-Path $PWD '.env')) } else { [IO.File]::ReadAllText((Join-Path $PWD '.env.example')) }
     function Read-Value($Key) {
@@ -42,56 +38,55 @@ function Init {
     [IO.File]::WriteAllText((Join-Path $PWD '.env'),$script:EnvText,(New-Object Text.UTF8Encoding $false))
     Write-Host '[init] 配置已就绪'
 }
-function Check-Service($Service) {
-    if ($Service -notin @('proxy','main','mirror','create','mcsm-web','mcsm-daemon','gateway')) { throw "未知服务: $Service" }
+function Manager {
+    Init
+    $values = @{}
+    Get-Content '.env' | ForEach-Object {
+        if ($_ -match '^([^#=]+)=(.*)$') { $values[$Matches[1]] = $Matches[2] }
+    }
+    $owner = if ($values['GHCR_OWNER']) { $values['GHCR_OWNER'] } else { 'abwuge' }
+    $tag = if ($values['IMAGE_TAG']) { $values['IMAGE_TAG'] } else { 'latest' }
+    $image = if ($values['IMAGE_PROXY']) { $values['IMAGE_PROXY'] } else { "ghcr.io/$owner/mc-proxy:$tag" }
+    & docker network inspect mcnet 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { & docker network create mcnet | Out-Null }
+    & docker run --rm --network mcnet --env-file .env -v "${PWD}:/mcnet-host" -v "${PWD}/data/whitelist:/whitelist" -v /var/run/docker.sock:/var/run/docker.sock --entrypoint python3 $image /mcnet-host/mcnet.py @args
+    if ($LASTEXITCODE -ne 0) { throw "mcnet 执行失败 ($LASTEXITCODE)" }
 }
-function Runtime {
-    Compose run --rm --no-deps -T --entrypoint python3 -v "${PWD}:/mcnet-host" proxy /opt/mcnet/runtime.py @args
-}
-function Up {
-    Compose up -d --wait @args
-    Runtime whitelist sync
+function Refresh {
+    foreach($f in @('.env.example','mcnet.py','mcnet.ps1')) {
+        Invoke-WebRequest "$BaseUrl/$f" -OutFile "$f.tmp"
+        Move-Item -Force "$f.tmp" $f
+    }
+    New-Item -ItemType Directory -Force 'config/gateway' | Out-Null
+    Invoke-WebRequest "$BaseUrl/config/gateway/Caddyfile" -OutFile 'config/gateway/Caddyfile'
 }
 switch ($Command) {
     'help' {
         @'
 用法: .\mcnet.ps1 命令 [子命令]
-  init / up [服务] / down / restart [服务] / ps [服务] / build [服务]
-  logs [服务]                        跟随日志，例如 logs proxy
+  init / up [服务] / down / restart [服务] / ps
+  logs [服务]                        跟随日志，默认 proxy
   console 服务                       控制台；Ctrl+P、Ctrl+Q 退出
-  mode online|offline|status          在线默认开白名单，离线默认关
-  whitelist list / on / off / sync    统一管理三个子服
-  whitelist add|remove java|bedrock "玩家名称" [--xuid XUID]
-  update                             下载最新配置和镜像并启动
+  mode online|offline|status
+  whitelist list|add|remove|on|off|sync
+  update [服务]                      更新脚本和镜像；原安装命令也可更新
   clean-data                         删除全部数据（需输入 YES）
-服务: proxy、main、mirror、create、mcsm-web、mcsm-daemon
+服务: proxy、main、mirror、create、mcsm-web、mcsm-daemon、gateway
 '@
     }
     'init' { Init }
-    'up' { Init; foreach($s in $Arguments) { Check-Service $s }; Up @Arguments }
-    {$_ -in 'build','restart','ps'} { foreach($s in $Arguments) { Check-Service $s }; Compose $Command @Arguments }
-    'down' { Compose down @Arguments }
-    'logs' { foreach($s in $Arguments) { Check-Service $s }; Compose logs -f --tail=200 @Arguments }
+    {$_ -in 'up','down','restart','ps','mode','whitelist'} { Manager $Command @Arguments }
+    'logs' {
+        $service = if ($Arguments.Count) { $Arguments[0] } else { 'proxy' }
+        & docker logs -f --tail=200 "mcnet-$service"
+    }
     'console' {
         if ($Arguments.Count -ne 1) { throw '用法: console 服务' }
-        Check-Service $Arguments[0]
         & docker attach "mcnet-$($Arguments[0])"
-        if ($LASTEXITCODE -ne 0) { throw '连接控制台失败' }
     }
-    'mode' {
-        if ($Arguments.Count -ne 1) { throw '用法: mode online|offline|status' }
-        Init; Runtime mode @Arguments
-        if ($Arguments[0] -ne 'status') { Up }
-    }
-    'whitelist' { Init; Runtime whitelist @Arguments }
-    'update' {
-        foreach($f in @('compose.yaml','.env.example')) { Invoke-WebRequest "$BaseUrl/$f" -OutFile $f }
-        Invoke-WebRequest "$BaseUrl/mcnet.ps1" -OutFile 'mcnet.ps1.tmp'
-        Move-Item -Force 'mcnet.ps1.tmp' 'mcnet.ps1'
-        Init; Compose pull; Up
-    }
+    'update' { Refresh; Manager update @Arguments }
     'clean-data' {
-        if ((Read-Host '确认删除全部 data/？输入 YES') -eq 'YES') { Compose down; Remove-Item -Recurse -Force data }
+        if ((Read-Host '确认删除全部 data/？输入 YES') -eq 'YES') { Manager down; Remove-Item -Recurse -Force data }
     }
     default { throw "未知命令: $Command；运行 .\mcnet.ps1 help 查看帮助" }
 }

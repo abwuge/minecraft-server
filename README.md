@@ -1,6 +1,6 @@
 # Minecraft 生电群组服
 
-用 Docker Compose 部署 Velocity 代理和三个 Fabric／Carpet 子服，同时支持 Java 版与基岩版接入。Minecraft、Mod 和插件在构建镜像时解析、下载；世界和运行配置保存在部署目录的 `data/` 下。
+由 MCSManager 原生 Docker 实例管理 Velocity 代理和三个 Fabric／Carpet 子服，同时支持 Java 版与基岩版接入。Minecraft、Mod 和插件在构建镜像时解析、下载；世界和运行配置保存在部署目录的 `data/` 下。
 
 | 服务 | 容器 | 用途 |
 |---|---|---|
@@ -9,13 +9,13 @@
 | `mirror` | `mcnet-mirror` | 镜像服，镜像任务通过 MirrorMcsmcdR 配置 |
 | `create` | `mcnet-create` | 创造模式的超平坦试验场 |
 | `mcsm-web` / `mcsm-daemon` | `mcnet-mcsm-web` / `mcnet-mcsm-daemon` | MCSManager 管理面板和守护进程 |
-| `gateway` | `mcnet-gateway` | 可选 Caddy 网关，使用 `gateway` profile 启用 |
+| `gateway` | `mcnet-gateway` | 默认 Caddy 网关，统一提供面板 80/443 |
 
 玩家从代理进入 `main`，在游戏中用 `/server mirror`、`/server create` 切换子服，用 `/server main` 返回。代理通过 Velocity modern forwarding 与 FabricProxy-Lite 传递玩家信息；三个子服的游戏端口和 RCON 端口只在 Docker 网络内使用。
 
 ## 部署
 
-镜像支持 `linux/amd64` 和 `linux/arm64`，包含 Java 25 运行时。主机需要 Docker 和 Compose V2；Windows 使用 Docker Desktop 的 Linux 容器模式。安装方法见 [Docker 官方文档](https://docs.docker.com/engine/install/)。
+镜像支持 `linux/amd64` 和 `linux/arm64`，包含 Java 25 运行时。主机需要 Docker；Windows 使用 Docker Desktop 的 Linux 容器模式。安装方法见 [Docker 官方文档](https://docs.docker.com/engine/install/)。
 
 默认 JVM 最大堆内存合计为 13 GiB：主服 6 GiB、镜像服 3 GiB、创造服 3 GiB、代理 1 GiB。请为 JVM 额外内存、系统和管理面板预留空间，并按机器容量调整。
 
@@ -32,12 +32,12 @@ cd mcnet
 ./mcnet.sh logs main
 ```
 
-安装脚本下载 Compose 文件和管理脚本，生成带随机密钥的 `.env`，然后拉取镜像。启动后，三个子服通过健康检查，代理才会启动；日志中出现 `Done (...)!` 表示 Minecraft 已完成启动。跟随日志时按 `Ctrl+C` 退出查看。
+安装脚本下载管理脚本和 Caddy 配置，生成带随机密钥的 `.env`，拉取镜像并启动服务。启动后，三个子服通过健康检查，代理才会启动；日志中出现 `Done (...)!` 表示 Minecraft 已完成启动。跟随日志时按 `Ctrl+C` 退出查看。
 
 只启动游戏服务时使用：
 
 ```bash
-docker compose up -d main mirror create proxy
+./mcnet.sh up main mirror create proxy
 ```
 
 ### Windows PowerShell
@@ -60,8 +60,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/abwuge/minecraft-server/main
 |---|---|---|
 | Java 版 | `服务器地址:25565`，TCP | `PROXY_PORT` |
 | 基岩版 | `服务器地址:19132`，UDP | `BEDROCK_PORT` |
-| MCSManager 网页 | `http://服务器地址:23333` | `MCSM_WEB_PORT` |
-| MCSManager 守护进程 | `服务器地址:24444` | `MCSM_DAEMON_PORT` |
+| MCSManager 网页与守护进程 | `http://服务器地址` 或公网 HTTPS 域名 | `MCSM_PUBLIC_URL` |
 
 外网接入需要在防火墙和路由器上放行相应协议。基岩版使用 UDP；仅放行 TCP 19132 无法连接。
 
@@ -103,7 +102,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/abwuge/minecraft-server/main
 
 ```text
 mcnet/
-├── compose.yaml
+├── mcnet.py
 ├── .env
 ├── mcnet.sh / mcnet.ps1
 └── data/
@@ -137,7 +136,7 @@ mcnet/
 | `MCSM_PUBLIC_URL` | 面板与守护进程共用的公网 HTTP(S) 地址 |
 | `MAIN_XMS` / `MAIN_XMX` 等 | 首次生成子服 MCDR 配置时使用的 JVM 内存 |
 | `PROXY_PORT` / `BEDROCK_PORT` | 玩家入口的宿主机端口 |
-| `MCSM_WEB_PORT` / `MCSM_DAEMON_PORT` | 面板与守护进程的宿主机端口 |
+| `PROXY_XMS` / `PROXY_XMX` | 代理的 JVM 内存 |
 | `MOTD_PROXY` | 首次生成 Velocity 配置时使用的 MiniMessage 文本 |
 
 `.env` 不入库。`init` 只在文件不存在时生成随机密钥；已有 `.env` 会保留。
@@ -149,8 +148,8 @@ mcnet/
 - 子服内存：修改 `data/<子服>/config.yml` 中 `start_command` 的 `-Xms`、`-Xmx`，再重启该子服。`.env` 中的值用于新生成的配置。
 - 游戏设置：修改 `data/<子服>/server/server.properties`，再重启该子服。
 - 代理 MOTD 和路由：修改 `data/proxy/velocity.toml`，再重启代理。
-- 代理内存：修改 `compose.yaml` 中 `proxy.environment` 的 `XMS`、`XMX`，再执行 `docker compose up -d proxy`。
-- 宿主机端口或镜像地址：修改 `.env`，再执行 `docker compose up -d` 应用 Compose 配置。
+- 代理内存：修改 `.env` 中的 `PROXY_XMS`、`PROXY_XMX`，再执行 `./mcnet.sh up proxy`。
+- 宿主机端口或镜像地址：修改 `.env`，再执行 `./mcnet.sh up` 应用配置。
 
 认证模式、白名单开关、转发密钥和 RCON 密码在每次启动时从环境变量应用。轮换密钥或密码后执行 `./mcnet.sh up`，让所有游戏服务使用一致的设置。
 
@@ -167,7 +166,7 @@ mcnet/
 ./mcnet.sh down
 ```
 
-`restart` 重启现有容器；`up` 应用 Compose 配置并启动服务。镜像更新会重建对应容器，期间玩家连接会中断。
+`restart` 通过原生实例重启服务；`up` 应用配置并启动服务。镜像更新会重建对应容器，期间玩家连接会中断。
 
 ### 更新安装文件和全部服务镜像
 
@@ -175,13 +174,12 @@ mcnet/
 ./mcnet.sh update
 ```
 
-该命令重新下载 `compose.yaml`、`.env.example` 和管理脚本，再执行 `docker compose pull`、`docker compose up -d`。现有 `.env` 和 `data/` 保留；自行修改的 Compose 文件会被下载版本替换。
+该命令更新管理脚本、Caddy 配置和镜像，再通过 MCSManager 更新实例。重新执行原安装命令也会更新现有安装；`.env`、管理员、实例 ID 和 `data/` 保留。旧 Compose 安装会迁移为原生实例，并移除旧的 `compose.yaml`。
 
 ### 只更新游戏镜像
 
 ```bash
-docker compose pull main mirror create proxy
-docker compose up -d main mirror create proxy
+./mcnet.sh update main mirror create proxy
 ```
 
 GitHub Actions 负责构建、发布镜像，服务器执行上述命令后才会部署新版本。公开 GHCR 镜像可匿名拉取；自己的私有镜像需要先 `docker login ghcr.io`。仓库与镜像的可见性分别配置，参见 [GitHub Packages 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)。
@@ -191,9 +189,9 @@ GitHub Actions 负责构建、发布镜像，服务器执行上述命令后才�
 ### 查看实际版本
 
 ```bash
-docker compose exec main cat /opt/server/mods.resolved.json
-docker compose exec proxy cat /opt/proxy/plugins.resolved.json
-docker compose exec proxy cat /opt/velocity.version
+docker exec mcnet-main cat /opt/server/mods.resolved.json
+docker exec mcnet-proxy cat /opt/proxy/plugins.resolved.json
+docker exec mcnet-proxy cat /opt/velocity.version
 ```
 
 解析结果记录 Minecraft、Fabric 和各 Mod／插件的版本。结合启动日志确认实际加载情况；用户手动放入的插件可能覆盖镜像内的同名文件。
@@ -235,7 +233,7 @@ MCDR 插件声明的 Python 依赖会安装到镜像中，构建时还会检查�
 | 只更新 Mod、核心和依赖不变 | Mod 集合层约 12.6 MiB，加少量版本信息 |
 | Minecraft／Fabric 核心变化 | 核心层约 121.5 MiB，另下载其他发生变化的层 |
 
-Mod 目前按整个集合分层，单个 Mod 更新也会下载集合层。`docker image ls` 显示解压后的镜像大小；实际传输量取决于压缩后的新层和服务器已有缓存。MCSManager 镜像以官方镜像为基础，只增加自动配置和容器连接脚本；Caddy 使用上游镜像。
+Mod 目前按整个集合分层，单个 Mod 更新也会下载集合层。`docker image ls` 显示解压后的镜像大小；实际传输量取决于压缩后的新层和服务器已有缓存。MCSManager 镜像以官方镜像为基础，只增加自动配置和实例管理接口；Caddy 使用上游镜像。
 
 ## 构建与发布
 
@@ -261,32 +259,27 @@ cd minecraft-server
 refresh="$(date +%s)"
 docker build -f base/Dockerfile --build-arg PACKAGE_REFRESH="$refresh" \
   -t ghcr.io/abwuge/mc-base:latest .
-docker compose build --build-arg PACKAGE_REFRESH="$refresh" main mirror create proxy
-docker compose up -d main mirror create proxy
+for role in main mirror create; do
+  docker build -f shared/Dockerfile.server --build-arg BASE_IMAGE=ghcr.io/abwuge/mc-base:latest \
+    --build-arg SERVER_NAME="$role" -t "ghcr.io/abwuge/mc-$role:latest" .
+done
+docker build -f proxy/Dockerfile --build-arg PACKAGE_REFRESH="$refresh" -t ghcr.io/abwuge/mc-proxy:latest .
+docker build -f mcsm/Dockerfile.daemon -t ghcr.io/abwuge/mc-mcsm-daemon:latest .
+docker build -f mcsm/Dockerfile.web -t ghcr.io/abwuge/mc-mcsm-web:latest .
+./mcnet.sh up
 ```
 
 `PACKAGE_REFRESH` 用于重新解析上游版本。CI 使用每次运行的 ID；`SOURCE_DATE_EPOCH` 固定为 `0`，用于保持导出层的时间戳稳定。
 
-## 管理面板与可选网关
+## 管理面板与网关
 
-MCSManager 随完整 Compose 部署启动。镜像会自动配置节点、登记四个现有游戏容器，并将实例类型设为 Minecraft Java 版服务端。首次启动自动创建管理员；可在 `.env` 设置 `MCSM_ADMIN_USER` 和 `MCSM_ADMIN_PASSWORD`，密码留空时随机生成。首次生成的凭据保存在 `data/mcsm/web/data/mcnet-credentials.json`，已有管理员保持原样。
+MCSManager 官方提供 Web 和 Daemon 两个服务。本项目基于官方镜像自动配置节点、四个 Minecraft Java 版 Docker 实例及首次安装管理员。可在 `.env` 设置 `MCSM_ADMIN_USER` 和 `MCSM_ADMIN_PASSWORD`；密码留空时随机生成。首次凭据保存在 `data/mcsm/web/data/mcnet-credentials.json`，已有管理员保持原样。
 
-`init` 自动填写宿主机 IP，直接通过 `http://服务器地址:23333` 使用面板。需要通过公网 HTTPS 复用 443 时，在 `.env` 设置 `MCSM_PUBLIC_URL=https://你的域名`，再执行 `./mcnet.sh up`。镜像自动使用对应的 WSS 地址、端口及 `/daemon/` 前缀；反向代理需将 `/daemon/` 转发到 24444，其余路径转发到 23333，并启用 HTTP/1.1 和 WebSocket。Nginx 面板 `server` 可设置 `large_client_header_buffers 4 16k;` 以容纳登录 Cookie。
+Caddy 默认启用，在宿主机 80/443 提供统一入口：`/daemon/*` 转发到内部 24444，其余请求转发到内部 23333，WebSocket 自动透传。设置 `MCSM_PUBLIC_URL=https://你的域名` 后执行 `./mcnet.sh up`，面板使用该域名的 WSS 节点地址。Caddy 自动申请域名证书；HTTP 入口同时保留，供上层端口转发和 CDN 回源使用。首次证书签发需要公网能将 ACME 验证请求送达 Caddy。
 
-容器连接脚本随守护进程镜像安装，通过 Docker API 连接日志、标准输入及启停。文件管理器使用现有 `data/main`、`data/mirror`、`data/create`、`data/proxy` 目录。
+四个游戏服务由 MCSManager 直接创建和管理。面板的启动、停止、重启及强制结束操作对应实际游戏容器，资源统计来自 Docker。停止后容器可以删除，世界和配置仍保存在宿主机 `data/`；下次启动使用同一实例 ID 和数据目录重新创建容器。守护进程重启后，按原生实例标签接管仍在运行的游戏容器。
 
-停止和重启按钮保留原容器；强制停止请使用自定义命令“强制停止容器”，内置强制结束只会结束连接进程。实例的进程资源统计对应连接进程，游戏容器资源可用 `docker stats` 查看。守护进程退出时保留游戏容器，重启后重新连接；启动流程为此关闭节点的软关闭，并启用实例自动启动。Compose 更新按容器名称重新连接。
-
-安装脚本只下载常规部署文件。启用 Caddy 时，先取得网关配置：
-
-```bash
-mkdir -p config/gateway
-curl -fsSL https://raw.githubusercontent.com/abwuge/minecraft-server/main/config/gateway/Caddyfile \
-  -o config/gateway/Caddyfile
-docker compose --profile gateway up -d gateway
-```
-
-默认网页入口为 `http://服务器地址:1080`，可用 `.env` 中的 `GATEWAY_PORT` 调整。Caddy 将 `/daemon/*` 请求转发到守护进程，其余请求转发到网页服务；面板中的守护进程连接地址按实际访问路径配置。
+文件管理器继续使用 `data/main`、`data/mirror`、`data/create`、`data/proxy`。安装和更新由 `mcnet` 统一进行，不再同时由 Compose 重建游戏容器。
 
 ## 仓库结构
 
@@ -302,7 +295,7 @@ config/proxy/              # Velocity 首次启动模板
 config/gateway/            # Caddy 配置
 scripts/resolve-packages.py # 包版本解析与下载
 packages.toml              # Mod／插件注册表
-compose.yaml               # 服务、网络、端口和数据挂载
+mcnet.py                   # 原生 Docker 实例安装、迁移与更新
 .env.example               # 部署参数示例
 install.sh / install.ps1   # 安装脚本
 mcnet.sh / mcnet.ps1       # 管理脚本
