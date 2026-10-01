@@ -72,6 +72,8 @@ COPY --link scripts/resolve-packages.py /opt/proxy/resolve-packages.py
 COPY --link packages.toml /opt/proxy/packages.toml
 COPY --link config/proxy /opt/proxy/templates
 COPY --link scripts/mcnet-runtime.py /opt/mcnet/runtime.py
+COPY --link config/windows-timezones.json /opt/mcnet/windows-timezones.json
+COPY --link config/UNICODE-LICENSE.txt /opt/mcnet/UNICODE-LICENSE.txt
 COPY --link --chmod=755 proxy/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 25565

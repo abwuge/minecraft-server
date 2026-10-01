@@ -21,7 +21,11 @@ function deploymentEnv(file = '/mcnet-env') {
     for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
       if (!line.trim() || line.trimStart().startsWith('#')) continue;
       const separator = line.indexOf('=');
-      if (separator > 0) env[line.slice(0, separator).trim()] = line.slice(separator + 1);
+      if (separator > 0) {
+        const key = line.slice(0, separator).trim(), value = line.slice(separator + 1);
+        // 空 TZ 表示自动继承，保留安装器已经识别的宿主机时区。
+        if (key !== 'TZ' || value) env[key] = value;
+      }
     }
   }
   return env;
@@ -39,7 +43,7 @@ function gameConfig(service, env = deploymentEnv()) {
   const heap = { main: ['2G', '6G'], mirror: ['1G', '3G'], create: ['1G', '3G'], proxy: ['512M', '1G'] }[service];
   const key = service.toUpperCase();
   environment.push(`XMS=${env[key + '_XMS'] || heap[0]}`, `XMX=${env[key + '_XMX'] || heap[1]}`);
-  environment.push('TZ=' + (env.TZ || 'Asia/Shanghai'));
+  environment.push('TZ=' + (env.TZ || 'Etc/UTC'));
   if (proxy) environment.push('MOTD_PROXY=' + (env.MOTD_PROXY || '<green>生电群组服</green>'));
   else environment.push('SERVER_NAME=' + service, 'MOTD_SERVER=' + service);
   return {
@@ -52,7 +56,7 @@ function gameConfig(service, env = deploymentEnv()) {
       networkMode: env.MCNET_NETWORK || 'mcnet', networkAliases: [service, name],
       ports: proxy ? [`${env.PROXY_PORT || 25565}:25565/tcp`, `${env.BEDROCK_PORT || 19132}:19132/udp`] : [],
       extraVolumes: [`${data}/${service}|/data`, `${data}/whitelist|/whitelist`,
-        `${data}/timezone|/etc/localtime`, `${data}/timezone|/usr/share/zoneinfo/${env.TZ || 'Asia/Shanghai'}`],
+        `${data}/timezone|/etc/localtime`, `${data}/timezone|/usr/share/zoneinfo/${env.TZ || 'Etc/UTC'}`],
       workingDir: '', changeWorkdir: false, memory: 0, maxSpace: 0 }
   };
 }

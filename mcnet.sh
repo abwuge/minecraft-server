@@ -47,11 +47,31 @@ values = dict(line.split('=', 1) for line in Path('.env').read_text().splitlines
 print(values.get('IMAGE_PROXY') or f"ghcr.io/{values.get('GHCR_OWNER') or 'abwuge'}/mc-proxy:{values.get('IMAGE_TAG') or 'latest'}")
 PYIMAGE
 }
+_timezone() {
+  python3 - <<'PYTZ'
+from pathlib import Path
+import os
+zone = os.environ.get('TZ', '').lstrip(':')
+if not zone:
+    local = str(Path('/etc/localtime').resolve())
+    if '/zoneinfo/' in local:
+        zone = local.split('/zoneinfo/', 1)[1]
+    elif Path('/etc/timezone').is_file():
+        zone = Path('/etc/timezone').read_text().strip()
+    elif Path('/etc/localtime').is_file():
+        content = Path('/etc/localtime').read_bytes()
+        table = Path('/usr/share/zoneinfo/zone1970.tab')
+        keys = ['Etc/UTC'] + ([l.split('\t')[2] for l in table.read_text().splitlines() if l and not l.startswith('#')] if table.exists() else [])
+        zone = next((key for key in keys if (Path('/usr/share/zoneinfo') / key).is_file() and (Path('/usr/share/zoneinfo') / key).read_bytes() == content), '')
+print(zone or 'Etc/UTC')
+PYTZ
+}
 _manager() {
   _init
   docker network inspect mcnet >/dev/null 2>&1 || docker network create mcnet >/dev/null
   if [ "$1" = update ]; then docker pull "$(_image)"; fi
   docker run --rm --network mcnet --env-file .env \
+    -e "MCNET_HOST_TIMEZONE=$(_timezone)" \
     -v "$PWD:/mcnet-host" -v "$PWD/data/whitelist:/whitelist" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     --entrypoint python3 "$(_image)" /mcnet-host/mcnet.py "$@"

@@ -9,6 +9,11 @@ test('control reads current deployment values instead of stale container environ
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcnet-env-'));
   const file = path.join(root, '.env');
   try {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = 'Asia/Tokyo';
+    fs.writeFileSync(file, 'TZ=\n');
+    assert.equal(deploymentEnv(file).TZ, 'Asia/Tokyo');
+    if (originalTZ === undefined) delete process.env.TZ; else process.env.TZ = originalTZ;
     fs.writeFileSync(file, '# comment\r\nWHITE_LIST=false\r\nRCON_PASSWORD=literal=$value\r\n');
     assert.equal(deploymentEnv(file).WHITE_LIST, 'false');
     assert.equal(deploymentEnv(file).RCON_PASSWORD, 'literal=$value');

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from urllib.parse import quote, urlencode, urlparse
+from zoneinfo import ZoneInfo
 
 ROOT = Path('/mcnet-host')
 GAMES = ('main', 'mirror', 'create', 'proxy')
@@ -111,6 +112,14 @@ def read_env():
     return result
 
 
+def timezone_name(value, mapping_file=Path('/opt/mcnet/windows-timezones.json')):
+    value = value.strip() or 'Etc/UTC'
+    if mapping_file.exists():
+        value = json.loads(mapping_file.read_text()).get(value, value)
+    ZoneInfo(value)
+    return value
+
+
 def image(env, service):
     return env.get('IMAGE_' + service.upper().replace('-', '_')) or \
         f"ghcr.io/{env.get('GHCR_OWNER') or 'abwuge'}/mc-{service}:{env.get('IMAGE_TAG') or 'latest'}"
@@ -150,7 +159,7 @@ class Manager:
     def __init__(self, docker=None):
         self.docker = docker or Docker()
         self.env = read_env()
-        self.env['TZ'] = self.env.get('TZ') or 'Asia/Shanghai'
+        self.env['TZ'] = timezone_name(self.env.get('TZ') or os.environ.get('MCNET_HOST_TIMEZONE') or 'Etc/UTC')
         helper = self.docker.inspect(os.environ['HOSTNAME'])
         self.source = next(m['Source'] for m in helper['Mounts'] if m['Destination'] == '/mcnet-host')
         self.env.update(MCNET_DATA_PATH=self.source + '/data', MCNET_NETWORK=self.env.get('MCNET_NETWORK') or 'mcnet')
@@ -190,7 +199,7 @@ class Manager:
                       (self.source + '/.env', '/mcnet-env'), ('/var/run/docker.sock', '/var/run/docker.sock')]
         else:
             environment = {k: v for k, v in self.env.items() if k.startswith('MCSM_')}
-            environment['TZ'] = self.env.get('TZ') or 'Asia/Shanghai'
+            environment['TZ'] = self.env['TZ']
             mounts = [(data + '/mcsm/web/data', '/opt/mcsmanager/web/data'),
                       (data + '/mcsm/web/logs', '/opt/mcsmanager/web/logs'),
                       (data + '/mcsm/web/upload_files', '/opt/mcsmanager/web/public/upload_files'),
@@ -203,14 +212,14 @@ class Manager:
                                 'ReadOnly': target == '/mcnet-env'} for source, target in mounts] + self.timezone_mounts()}}
 
     def timezone_mounts(self):
-        timezone = self.env.get('TZ') or 'Asia/Shanghai'
+        timezone = self.env['TZ']
         return [{'Type': 'bind', 'Source': self.env['MCNET_DATA_PATH'] + '/timezone',
                  'Target': target, 'ReadOnly': True}
                 for target in ('/etc/localtime', '/usr/share/zoneinfo/' + timezone)]
 
     def gateway_spec(self):
         hostname = urlparse(self.env.get('MCSM_PUBLIC_URL') or '').hostname or 'localhost'
-        return {'Image': 'caddy:2-alpine', 'Env': ['MCSM_HOST=' + hostname, 'TZ=' + (self.env.get('TZ') or 'Asia/Shanghai')],
+        return {'Image': 'caddy:2-alpine', 'Env': ['MCSM_HOST=' + hostname, 'TZ=' + self.env['TZ']],
                 'ExposedPorts': {'80/tcp': {}, '443/tcp': {}, '443/udp': {}}, 'HostConfig': {
                     'RestartPolicy': {'Name': 'unless-stopped'}, 'NetworkMode': self.env['MCNET_NETWORK'],
                     'PortBindings': {p: [{'HostPort': p.split('/')[0]}] for p in ('80/tcp', '443/tcp', '443/udp')},

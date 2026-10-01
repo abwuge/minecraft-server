@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import struct
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 spec = importlib.util.spec_from_file_location('manager', Path(__file__).parents[1] / 'mcnet.py')
 m = importlib.util.module_from_spec(spec)
@@ -11,6 +13,14 @@ spec.loader.exec_module(m)
 
 
 class ManagerTests(unittest.TestCase):
+    def test_windows_and_iana_host_timezones_keep_offset_and_daylight_saving(self):
+        mapping = Path(__file__).parents[1] / 'config/windows-timezones.json'
+        self.assertEqual(m.timezone_name('China Standard Time', mapping), 'Asia/Shanghai')
+        self.assertEqual(m.timezone_name('Asia/Tokyo', mapping), 'Asia/Tokyo')
+        zone = ZoneInfo(m.timezone_name('Eastern Standard Time', mapping))
+        self.assertEqual(datetime(2026, 1, 1, tzinfo=zone).utcoffset().total_seconds(), -5 * 3600)
+        self.assertEqual(datetime(2026, 7, 1, tzinfo=zone).utcoffset().total_seconds(), -4 * 3600)
+
     def test_existing_native_games_wait_for_takeover_before_starting(self):
         states = [{'service': s, 'id': s, 'status': 0} for s in m.GAMES]
         containers = {s: {'State': {'Running': True}, 'Config': {
@@ -55,7 +65,7 @@ class ManagerTests(unittest.TestCase):
         manager = object.__new__(m.Manager)
         manager.source = '/host_mnt/c/mcnet'
         manager.env = {'MCNET_DATA_PATH': manager.source + '/data',
-                       'MCNET_NETWORK': 'mcnet', 'MCSM_PUBLIC_URL': 'https://mcsm.example.com'}
+                       'MCNET_NETWORK': 'mcnet', 'MCSM_PUBLIC_URL': 'https://mcsm.example.com', 'TZ': 'Asia/Tokyo'}
         for role in m.PANELS:
             spec = manager.panel_spec(role)
             self.assertNotIn('PortBindings', spec['HostConfig'])
