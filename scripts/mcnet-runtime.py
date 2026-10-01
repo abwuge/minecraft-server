@@ -108,7 +108,14 @@ def offline_uuid(name):
 
 def load_players():
     path = SHARED / 'players.json'
-    return json.loads(path.read_text()) if path.exists() else []
+    players = json.loads(path.read_text()) if path.exists() else []
+    canonical = SHARED / 'whitelist.json'
+    if canonical.exists():
+        identities = {entry['uuid'] for entry in json.loads(canonical.read_text())}
+        players = [p for p in players if p.get('uuid') in identities or
+                   p.get('online_uuid') in identities or
+                   (p['platform'] == 'java' and offline_uuid(p['name']) in identities)]
+    return players
 
 
 def import_entries(players, entries):

@@ -62,6 +62,14 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(json.loads((r.SHARED/'whitelist.json').read_text()), online)
         self.assertIn('WHITE_LIST=true', (r.HOST/'.env').read_text())
 
+    def test_console_removal_stays_removed_after_sync(self):
+        with r.whitelist_lock():
+            r.save_players([{'platform':'java','name':'Alice','online_uuid':str(uuid.uuid4())}],True)
+        (r.SHARED/'whitelist.json').write_text('[]')
+        with patch.object(r,'reload_servers'): r.whitelist('sync')
+        self.assertEqual(r.load_players(),[])
+        self.assertEqual(json.loads((r.SHARED/'whitelist.json').read_text()),[])
+
     def test_fresh_and_existing_geyser_floodgate(self):
         plugins = r.DATA/'plugins'
         plugins.mkdir()
