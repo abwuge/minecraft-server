@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -44,6 +45,60 @@ class RuntimeTests(unittest.TestCase):
         r.prepare_server()
         self.assertIn('hackOnlineMode = false', toml.read_text())
         self.assertIn('enforce-whitelist=false', props.read_text())
+
+    def test_legacy_backup_detects_saved_world_and_preserves_settings(self):
+        path = r.DATA / 'config/prime_backup/config.json'
+        path.parent.mkdir(parents=True)
+        config = {
+            'enabled': True, 'storage_root': './pb_files',
+            'server': {'saved_world_regex': ['Saved the game', 'Saved the world'],
+                       'save_world_max_wait': '10m'},
+            'backup': {'targets': ['SurvivalForever']},
+            'scheduled_backup': {'crontab': '*/10 * * * *'},
+        }
+        path.write_text(json.dumps(config))
+        r.prepare_server()
+        result = json.loads(path.read_text())
+        self.assertTrue(any(re.fullmatch(p, 'System chat: Saved the game')
+                            for p in result['server']['saved_world_regex']))
+        config['server']['saved_world_regex'].append('System chat: Saved the game')
+        self.assertEqual(result, config)
+        text = path.read_text()
+        r.prepare_server()
+        self.assertEqual(path.read_text(), text)
+
+    def test_custom_backup_save_detection_preserved(self):
+        path = r.DATA / 'config/prime_backup/config.json'
+        path.parent.mkdir(parents=True)
+        for patterns in ([], ['custom save complete'], ['(?:System chat: )?Saved the game']):
+            text = json.dumps({'enabled': False, 'server': {'saved_world_regex': patterns}})
+            path.write_text(text)
+            r.prepare_prime_backup()
+            self.assertEqual(path.read_text(), text)
+        path.unlink()
+        r.prepare_prime_backup()
+        self.assertFalse(path.exists())
+
+    def test_mirror_save_detection_for_fresh_and_existing_config(self):
+        path = r.DATA / 'config/mirror_mcsmcdr/config.json'
+        r.prepare_mirror()
+        config = json.loads(path.read_text())
+        save = config['!!mirror']['command']['action']['sync']['save_world']
+        for text in ('Saved the game', 'System chat: Saved the game'):
+            self.assertIsNotNone(re.match(save['saved_world_regex'], text))
+        config['!!mirror'].update({'mcsm': {'uuid': 'existing'},
+                                 'sync': {'world': ['SurvivalForever'], 'target': ['../mirror/server']}})
+        save['saved_world_regex'] = '^Saved the game$'
+        config['!!custom'] = {'command': {'action': {'sync': {'save_world': {
+            'saved_world_regex': '^custom save$'
+        }}}}}
+        path.write_text(json.dumps(config))
+        r.prepare_mirror()
+        save['saved_world_regex'] = '^(?:System chat: )?Saved the game$'
+        self.assertEqual(json.loads(path.read_text()), config)
+        text = path.read_text()
+        r.prepare_mirror()
+        self.assertEqual(path.read_text(), text)
 
     def test_union_existing_lists_and_mode_uuid_round_trip(self):
         for name in ('Alice', 'Bob'):

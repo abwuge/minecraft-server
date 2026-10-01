@@ -55,7 +55,7 @@ RUN set -eux; \
 
 # Mod changes do not reinstall MCDR or its Python dependencies.
 FROM system AS mcdr
-ARG MCDR_VERSION=2.14.7
+ARG MCDR_VERSION=2.16.0
 COPY --link --from=packages /resolved/requirements.txt /build/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m venv /opt/mcdr \
@@ -70,7 +70,7 @@ COPY base/install-mcdr-plugins.py /build/install-mcdr-plugins.py
 RUN /opt/mcdr/bin/python /build/install-mcdr-plugins.py /opt/server/mcdr-plugins
 
 FROM system
-ARG MCDR_VERSION=2.14.7
+ARG MCDR_VERSION=2.16.0
 ENV PATH=/opt/mcdr/bin:$PATH
 
 # Independent copy layers preserve their digests when another component changes.

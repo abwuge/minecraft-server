@@ -173,6 +173,40 @@ def import_server_whitelist(path):
     path.symlink_to('../../whitelist/whitelist.json')
 
 
+def prepare_prime_backup():
+    path = DATA / 'config/prime_backup/config.json'
+    if not path.exists():
+        return
+    config = json.loads(path.read_text())
+    patterns = config.get('server', {}).get('saved_world_regex', [])
+    message = 'System chat: Saved the game'
+    # 新版 MC 给保存提示加了前缀；PB 对提示做全串匹配。
+    if (any(re.fullmatch(p, 'Saved the game') for p in patterns)
+            and not any(re.fullmatch(p, message) for p in patterns)):
+        patterns.append(message)
+        write_json(path, config)
+
+
+def prepare_mirror():
+    path = DATA / 'config/mirror_mcsmcdr/config.json'
+    pattern = '^(?:System chat: )?Saved the game$'
+    if not path.exists():
+        # 插件在首次加载时补齐其它默认值，包括关闭控制接口。
+        write_json(path, {'!!mirror': {'command': {'action': {'sync': {
+            'save_world': {'saved_world_regex': pattern}
+        }}}}})
+        return
+    config = json.loads(path.read_text())
+    changed = False
+    for mirror in config.values():
+        save = mirror.get('command', {}).get('action', {}).get('sync', {}).get('save_world', {})
+        if save.get('saved_world_regex') == '^Saved the game$':
+            save['saved_world_regex'] = pattern
+            changed = True
+    if changed:
+        write_json(path, config)
+
+
 def prepare_server():
     online = boolean(os.environ.get('ONLINE_MODE', 'true'))
     enabled = boolean(os.environ.get('WHITE_LIST', str(online).lower()))
@@ -185,6 +219,8 @@ def prepare_server():
               json.dumps(os.environ['VELOCITY_FORWARDING_SECRET']), ' = ')
     with whitelist_lock():
         import_server_whitelist(server / 'whitelist.json')
+    prepare_prime_backup()
+    prepare_mirror()
 
 
 def get_json(url, missing=False):
