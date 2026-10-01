@@ -44,6 +44,7 @@ jobs:
           file: base/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          outputs: type=image,compression=zstd,compression-level=19,force-compression=true,oci-mediatypes=true
           tags: |
             ${{ steps.img.outputs.name }}:latest
             ${{ steps.img.outputs.name }}:sha-${{ github.sha }}
