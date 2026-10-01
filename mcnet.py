@@ -288,6 +288,9 @@ class Manager:
                   {s: self.docker.inspect('mcnet-' + s) for s in GAMES}), 'MCSManager 实例接管')
         self.control('sync')
         self.ensure_panel('mcsm-web')
+        self.wait(lambda: self.docker.execute('mcnet-mcsm-web', ['node', '-e',
+                  "process.stdout.write(require('fs').existsSync('data/mcnet-mirror/connection.json') ? 'ready' : '')"]).strip() == 'ready',
+                  '镜像服控制配置')
         self.ensure_panel('gateway')
         configurations = json.loads(self.control('config'))
         for service in GAMES:

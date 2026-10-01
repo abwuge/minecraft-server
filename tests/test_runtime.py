@@ -100,6 +100,33 @@ class RuntimeTests(unittest.TestCase):
         r.prepare_mirror()
         self.assertEqual(path.read_text(), text)
 
+    def test_main_mirror_connection_and_paths_migrate_without_changing_other_tasks(self):
+        connection = self.root / 'connection.json'
+        control = {'enable': True, 'url': 'http://mcnet-mcsm-web:23333',
+                   'uuid': 'actual-mirror', 'remote_uuid': 'actual-node', 'apikey': 'scoped'}
+        connection.write_text(json.dumps(control))
+        props = r.DATA / 'server/server.properties'
+        props.parent.mkdir()
+        props.write_text('level-name=SurvivalForever\n')
+        config_path = r.DATA / 'config/mirror_mcsmcdr/config.json'
+        with patch.dict(os.environ, SERVER_NAME='main'):
+            r.prepare_mirror(connection)
+            config = json.loads(config_path.read_text())
+            self.assertEqual(config['!!mirror']['mcsm'], control)
+            self.assertEqual(config['!!mirror']['sync'], {'world': ['SurvivalForever'],
+                             'source': './server', 'target': ['/mirror/server']})
+            config['!!mirror']['command']['action']['sync']['require_confirm'] = True
+            config['!!mirror']['sync']['world'] = ['custom']
+            config['!!extra'] = {'mcsm': {'enable': False}, 'sync': {'target': ['elsewhere']}}
+            config_path.write_text(json.dumps(config))
+            r.prepare_mirror(connection)
+            self.assertEqual(json.loads(config_path.read_text()), config)
+            self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+        original = config_path.read_text()
+        with patch.dict(os.environ, SERVER_NAME='mirror'):
+            r.prepare_mirror(connection)
+        self.assertEqual(config_path.read_text(), original)
+
     def test_union_existing_lists_and_mode_uuid_round_trip(self):
         for name in ('Alice', 'Bob'):
             d = self.root/name/'server'

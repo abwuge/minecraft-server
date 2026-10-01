@@ -187,24 +187,36 @@ def prepare_prime_backup():
         write_json(path, config)
 
 
-def prepare_mirror():
+def prepare_mirror(connection_path=Path('/mcnet-mirror/connection.json')):
     path = DATA / 'config/mirror_mcsmcdr/config.json'
     pattern = '^(?:System chat: )?Saved the game$'
     if not path.exists():
         # 插件在首次加载时补齐其它默认值，包括关闭控制接口。
-        write_json(path, {'!!mirror': {'command': {'action': {'sync': {
+        config = {'!!mirror': {'command': {'action': {'sync': {
             'save_world': {'saved_world_regex': pattern}
-        }}}}})
-        return
-    config = json.loads(path.read_text())
+        }}}}}
+    else:
+        config = json.loads(path.read_text())
+    original = json.dumps(config) if path.exists() else None
     changed = False
     for mirror in config.values():
         save = mirror.get('command', {}).get('action', {}).get('sync', {}).get('save_world', {})
         if save.get('saved_world_regex') == '^Saved the game$':
             save['saved_world_regex'] = pattern
             changed = True
-    if changed:
+    if os.environ.get('SERVER_NAME') == 'main' and connection_path.exists():
+        mirror = config.setdefault('!!mirror', {})
+        mirror['mcsm'] = json.loads(connection_path.read_text())
+        sync = mirror.setdefault('sync', {})
+        sync.setdefault('source', './server')
+        sync['target'] = ['/mirror/server']
+        if not sync.get('world') or sync['world'] == ['world']:
+            props = DATA / 'server/server.properties'
+            match = re.search(r'(?m)^level-name=(.+)$', props.read_text()) if props.exists() else None
+            sync['world'] = [match.group(1).strip() if match else 'world']
+    if changed or json.dumps(config) != original:
         write_json(path, config)
+        path.chmod(0o600)
 
 
 def prepare_server():

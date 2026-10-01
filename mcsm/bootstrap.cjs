@@ -56,6 +56,8 @@ function gameConfig(service, env = deploymentEnv()) {
       networkMode: env.MCNET_NETWORK || 'mcnet', networkAliases: [service, name],
       ports: proxy ? [`${env.PROXY_PORT || 25565}:25565/tcp`, `${env.BEDROCK_PORT || 19132}:19132/udp`] : [],
       extraVolumes: [`${data}/${service}|/data`, `${data}/whitelist|/whitelist`,
+        ...(service === 'main' ? [`${data}/mirror/server|/mirror/server`,
+          `${data}/mcsm/web/data/mcnet-mirror|/mcnet-mirror`] : []),
         `${data}/timezone|/etc/localtime`, `${data}/timezone|/usr/share/zoneinfo/${env.TZ || 'Etc/UTC'}`],
       workingDir: '', changeWorkdir: false, memory: 0, maxSpace: 0 }
   };
@@ -113,6 +115,34 @@ function prepareWeb(root = 'data', daemonRoot = '/mcnet-daemon-data') {
     remoteMappings: [] });
   write(target, config);
   console.log('[mcnet] 节点地址: ' + config.ip + ':' + config.port + '/daemon/');
+  return prepareMirrorAccess(root, daemonRoot, path.basename(target, '.json'));
+}
+
+function prepareMirrorAccess(root, daemonRoot, daemonId) {
+  const users = path.join(root, 'User');
+  // 首次安装必须先初始化管理员，否则专用账号会关闭面板的安装入口。
+  if (!fs.existsSync(users) || !fs.readdirSync(users).some(f => f.endsWith('.json'))) return false;
+  const instances = path.join(daemonRoot, 'InstanceConfig');
+  const mirror = fs.readdirSync(instances).find(f => f.endsWith('.json') &&
+    read(path.join(instances, f)).nickname === 'mcnet-mirror');
+  if (!mirror) throw new Error('Mirror instance is not ready');
+  const uuid = path.basename(mirror, '.json');
+  const accountId = identifier('mirror-api');
+  const accountFile = path.join(users, accountId + '.json');
+  const account = read(accountFile);
+  if (account.userName && account.userName !== 'mcnet-mirror-api') throw new Error('Mirror API account ID conflict');
+  account.apiKey ||= crypto.randomBytes(32).toString('hex');
+  Object.assign(account, { uuid: accountId, userName: 'mcnet-mirror-api', permission: 1,
+    instances: [{ instanceUuid: uuid, daemonId }], isInit: true });
+  write(accountFile, account);
+  const settingsFile = path.join(root, 'SystemConfig/config.json');
+  const settings = read(settingsFile);
+  settings.enableApiKey = true;
+  write(settingsFile, settings);
+  write(path.join(root, 'mcnet-mirror/connection.json'), {
+    enable: true, url: 'http://mcnet-mcsm-web:23333', uuid, remote_uuid: daemonId, apikey: account.apiKey
+  });
+  return true;
 }
 
 function credentials() {
@@ -149,13 +179,27 @@ async function initializeAdmin() {
 
 async function main() {
   const role = process.argv[2];
+  let mirrorReady = true;
   if (role === 'daemon') prepareDaemon();
-  else if (role === 'web') prepareWeb();
+  else if (role === 'web') mirrorReady = prepareWeb();
   else throw new Error('Expected web or daemon');
-  const child = spawn(process.execPath, ['app.js', '--max-old-space-size=8192'], { stdio: 'inherit' });
+  const launch = () => spawn(process.execPath, ['app.js', '--max-old-space-size=8192'], { stdio: 'inherit' });
+  let child = launch();
+  let reloading = false;
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child.kill(signal));
-  child.on('exit', code => process.exit(code ?? 0));
-  if (role === 'web') await initializeAdmin();
+  const onExit = code => { if (!reloading) process.exit(code ?? 0); };
+  child.on('exit', onExit);
+  if (role === 'web') {
+    await initializeAdmin();
+    if (!mirrorReady) {
+      reloading = true;
+      await new Promise(resolve => { child.once('exit', resolve); child.kill('SIGTERM'); });
+      if (!prepareWeb()) throw new Error('Mirror API account initialization failed');
+      reloading = false;
+      child = launch();
+      child.on('exit', onExit);
+    }
+  }
 }
-module.exports = { prepareDaemon, prepareWeb, identifier, credentials, gameConfig, deploymentEnv };
+module.exports = { prepareDaemon, prepareWeb, prepareMirrorAccess, identifier, credentials, gameConfig, deploymentEnv };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exit(1); });

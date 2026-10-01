@@ -6,7 +6,7 @@
 |---|---|---|
 | `proxy` | `mcnet-proxy` | Velocity、Geyser、Floodgate、ViaVersion、ViaBackwards 和跨服聊天 |
 | `main` | `mcnet-main` | 主生电世界，生存模式 |
-| `mirror` | `mcnet-mirror` | 镜像服，镜像任务通过 MirrorMcsmcdR 配置 |
+| `mirror` | `mcnet-mirror` | 镜像服，主服通过 `!!mirror` 控制和同步 |
 | `create` | `mcnet-create` | 创造模式的超平坦试验场 |
 | `mcsm-web` / `mcsm-daemon` | `mcnet-mcsm-web` / `mcnet-mcsm-daemon` | MCSManager 管理面板和守护进程 |
 | `gateway` | `mcnet-gateway` | 默认 Caddy 网关，统一提供面板 80/443 |
@@ -214,7 +214,9 @@ Minecraft 版本取所有必需 Mod 支持的正式游戏版本交集，再选�
 
 代理插件独立解析版本：Modrinth 优先正式版，没有正式版时使用 Beta；Floodgate 来自 GeyserMC 下载 API。GitHub Release 来源使用正式发布，MCDR 插件可以通过 `tag` 固定版本。当前 MirrorMcsmcdR 固定为 `v1.4.1`，以避开 `v1.7.0` 的导入错误。
 
-构建时从 PyPI 解析 MCDR 最新正式版，并安装插件声明的 Python 依赖、检查插件能否导入。版本记录在镜像的 `/opt/server/mcdr-plugins.resolved.json` 中。PrimeBackup 是否执行备份由 `data/<子服>/config/prime_backup/config.json` 控制；MirrorMcsmcdR 的镜像任务也需要单独配置。
+构建时从 PyPI 解析 MCDR 最新正式版，并安装插件声明的 Python 依赖、检查插件能否导入。版本记录在镜像的 `/opt/server/mcdr-plugins.resolved.json` 中。PrimeBackup 是否执行备份由 `data/<子服>/config/prime_backup/config.json` 控制。
+
+安装器自动连接主服的 `!!mirror`：面板启用 API，创建仅关联镜像服的 `mcnet-mirror-api` 账号，保留管理员凭据和现有实例 ID。主服启动时更新内置任务的面板地址、节点和实例 ID、凭据及目标目录 `/mirror/server`；世界名称默认取主服 `level-name`，已有自定义世界列表和确认、保存、重启策略保留。额外命令前缀的任务以及镜像服、创造服自己的控制设置保留。凭据仅保存在数据目录，主服不会获得管理员 API 密钥。`!!mirror status` 可检查连接；执行同步会覆盖镜像服对应世界，请按插件提示确认。
 
 内置 Fabric Mod 从 `/opt/server/mods` 加载。额外 Mod 放入 `data/<子服>/server/mods/`；代理插件放入 `data/proxy/plugins/`；MCDR 插件放入 `data/<子服>/plugins/`。启动脚本会刷新指向镜像内插件的链接，并保留用户放入的文件。同名手动 JAR 会优先保留，换回内置版本时先移走该文件，再重启服务。
 

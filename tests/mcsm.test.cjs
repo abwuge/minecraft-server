@@ -99,5 +99,42 @@ test('native containers carry authentication, mounts, network aliases and player
   assert.ok(main.docker.env.includes('ONLINE_MODE=false'));
   assert.ok(main.docker.env.includes('WHITE_LIST=false'));
   assert.ok(main.docker.extraVolumes.includes('/host_mnt/c/mcnet/data/main|/data'));
+  assert.ok(main.docker.extraVolumes.includes('/host_mnt/c/mcnet/data/mirror/server|/mirror/server'));
+  assert.ok(main.docker.extraVolumes.includes('/host_mnt/c/mcnet/data/mcsm/web/data/mcnet-mirror|/mcnet-mirror'));
+  assert.ok(!gameConfig('mirror', env).docker.extraVolumes.some(v => v.endsWith('|/mcnet-mirror')));
   assert.deepEqual(main.docker.networkAliases,['main','mcnet-main']);
+});
+
+test('mirror API account uses existing node and instance IDs without changing administrators', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mcnet-mirror-'));
+  try {
+    const daemon = path.join(root, 'daemon'), web = path.join(root, 'web');
+    prepareDaemon(daemon, {MCNET_DATA_PATH:'/srv/mcnet/data'});
+    const instances = path.join(daemon, 'InstanceConfig');
+    const mirror = fs.readdirSync(instances).find(f => JSON.parse(fs.readFileSync(path.join(instances,f))).nickname === 'mcnet-mirror');
+    fs.renameSync(path.join(instances,mirror), path.join(instances,'old-mirror.json'));
+    assert.equal(prepareWeb(web, daemon), false);
+    const nodes = path.join(web, 'RemoteServiceConfig');
+    fs.renameSync(path.join(nodes,fs.readdirSync(nodes)[0]), path.join(nodes,'existing-node.json'));
+    const users = path.join(web, 'User');
+    fs.mkdirSync(users);
+    const admin = '{"userName":"owner","permission":10,"apiKey":"existing","open2FA":true}';
+    fs.writeFileSync(path.join(users,'admin.json'), admin);
+    assert.equal(prepareWeb(web, daemon), true);
+    const file = path.join(web,'mcnet-mirror/connection.json');
+    const connection = JSON.parse(fs.readFileSync(file));
+    assert.equal(connection.uuid, 'old-mirror');
+    assert.equal(connection.remote_uuid, 'existing-node');
+    assert.equal(connection.url, 'http://mcnet-mcsm-web:23333');
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    const accountFile = fs.readdirSync(users).find(f => f !== 'admin.json');
+    const account = JSON.parse(fs.readFileSync(path.join(users,accountFile)));
+    assert.equal(account.permission, 1);
+    assert.deepEqual(account.instances,[{instanceUuid:'old-mirror',daemonId:'existing-node'}]);
+    assert.equal(account.apiKey, connection.apikey);
+    prepareWeb(web, daemon);
+    assert.equal(JSON.parse(fs.readFileSync(file)).apikey, connection.apikey);
+    assert.equal(fs.readFileSync(path.join(users,'admin.json'),'utf8'), admin);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(web,'SystemConfig/config.json'))).enableApiKey, true);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
