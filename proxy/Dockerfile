@@ -18,7 +18,7 @@ ARG PACKAGE_REFRESH=manual
 # responses and basic curl doesn't always decode them in the build sandbox.
 RUN python3 - <<'PY'
 import json, sys, urllib.request, urllib.error, gzip, time
-UA = "minecraft-server-base/1.0 (+self-hosted build)"
+UA = "minecraft-server/1.0 (https://github.com/abwuge/minecraft-server)"
 def get(url):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA,
