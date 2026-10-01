@@ -140,6 +140,10 @@ def render_whitelist(players, online):
         else:
             identity = player['uuid']
         result[identity] = {'uuid': identity, 'name': player['name']}
+        # 旧白名单无法区分 Java 身份与已绑定 Java 的基岩版身份。
+        if not online and player['platform'] == 'java' and player.get('online_uuid'):
+            original = player['online_uuid']
+            result[original] = {'uuid': original, 'name': player['name']}
     return list(result.values())
 
 

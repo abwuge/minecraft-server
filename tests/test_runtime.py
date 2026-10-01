@@ -55,7 +55,7 @@ class RuntimeTests(unittest.TestCase):
         online = json.loads((r.SHARED/'whitelist.json').read_text())
         self.assertEqual(len(online), 2)
         r.mode('offline')
-        self.assertEqual({p['uuid'] for p in json.loads((r.SHARED/'whitelist.json').read_text())}, {r.offline_uuid('Alice'),r.offline_uuid('Bob')})
+        self.assertEqual({p['uuid'] for p in json.loads((r.SHARED/'whitelist.json').read_text())}, {r.offline_uuid('Alice'),r.offline_uuid('Bob')} | {p['uuid'] for p in online})
         os.environ['ONLINE_MODE'] = 'false'
         with patch.object(r,'reload_servers'): r.whitelist('sync')
         r.mode('online')

@@ -92,6 +92,14 @@ jobs:
           node --test tests/mcsm.test.cjs
           bash -n mcnet.sh proxy/entrypoint.sh shared/entrypoint.sh
 
+      - name: Check PowerShell syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/mcnet.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { $errors | Format-List; exit 1 }
+
       - name: Compute owner (lowercase)
         id: owner
         run: echo "lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
