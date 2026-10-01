@@ -57,14 +57,15 @@ _manager() {
     --entrypoint python3 "$(_image)" /mcnet-host/mcnet.py "$@"
 }
 _refresh() {
-  local refresh_key
-  refresh_key=$(date +%s)
+  local revision source_url
+  revision=$(curl -fsSL https://api.github.com/repos/abwuge/minecraft-server/commits/main | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
+  source_url="https://raw.githubusercontent.com/abwuge/minecraft-server/$revision"
   for f in .env.example mcnet.py mcnet.sh; do
-    curl -fsSL "$BASE_URL/$f?v=$refresh_key" -o "$f.tmp"
+    curl -fsSL "$source_url/$f" -o "$f.tmp"
     mv "$f.tmp" "$f"
   done
   mkdir -p config/gateway
-  curl -fsSL "$BASE_URL/config/gateway/Caddyfile?v=$refresh_key" -o config/gateway/Caddyfile
+  curl -fsSL "$source_url/config/gateway/Caddyfile" -o config/gateway/Caddyfile
   chmod +x mcnet.sh
 }
 case "$CMD" in
