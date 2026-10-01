@@ -18,7 +18,7 @@ import uuid
 import zipfile
 
 SERVICES = ('main', 'mirror', 'create')
-SHARED = Path('/mcnet-shared')
+SHARED = Path('/whitelist')
 DATA = Path('/data')
 HOST = Path('/mcnet-host')
 
@@ -163,7 +163,7 @@ def import_server_whitelist(path):
     save_players(players, boolean(os.environ.get('ONLINE_MODE', 'true')))
     if path.is_symlink() or path.exists():
         path.unlink()
-    path.symlink_to(canonical)
+    path.symlink_to('../../whitelist/whitelist.json')
 
 
 def prepare_server():

@@ -20,7 +20,7 @@ class RuntimeTests(unittest.TestCase):
         self.env = patch.dict(os.environ, ONLINE_MODE='true', WHITE_LIST='true', RCON_PASSWORD='test-rcon', VELOCITY_FORWARDING_SECRET='test-forward')
         self.env.start()
         self.addCleanup(self.env.stop)
-        self.paths = patch.multiple(r, DATA=self.root/'data', SHARED=self.root/'shared', HOST=self.root/'host')
+        self.paths = patch.multiple(r, DATA=self.root/'data', SHARED=self.root/'whitelist', HOST=self.root/'host')
         self.paths.start()
         self.addCleanup(self.paths.stop)
         r.DATA.mkdir()
@@ -47,8 +47,8 @@ class RuntimeTests(unittest.TestCase):
 
     def test_union_existing_lists_and_mode_uuid_round_trip(self):
         for name in ('Alice', 'Bob'):
-            d = self.root/name
-            d.mkdir()
+            d = self.root/name/'server'
+            d.mkdir(parents=True)
             p = d/'whitelist.json'
             p.write_text(json.dumps([{'uuid':str(uuid.uuid5(uuid.NAMESPACE_DNS,name)), 'name':name}]))
             with r.whitelist_lock(): r.import_server_whitelist(p)
